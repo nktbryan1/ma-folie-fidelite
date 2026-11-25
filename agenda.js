@@ -54,7 +54,12 @@ const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() ==
 const hm = (d) => new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit" }).format(d);
 const dayLong = (d) => { const s = new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long" }).format(d); return s.charAt(0).toUpperCase() + s.slice(1); };
 const dur = (m) => m >= 60 ? `${Math.floor(m / 60)} h${m % 60 ? String(m % 60).padStart(2, "0") : ""}` : `${m} min`;
-const SLOT_MIN = 120; // tous les rendez-vous durent 2 h
+const SLOT_MIN = 120; // durée par défaut : 2 h (modifiable par Marie)
+const DURATIONS = [30, 45, 60, 90, 120, 150, 180, 210, 240];
+const durSelect = (id, val) => {
+  const opts = DURATIONS.includes(val) ? DURATIONS : [...DURATIONS, val].sort((a, b) => a - b);
+  return `<select class="field" id="${id}">${opts.map((m) => `<option value="${m}" ${m === val ? "selected" : ""}>${dur(m)}</option>`).join("")}</select>`;
+};
 const pad = (n) => String(n).padStart(2, "0");
 const dateInput = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const timeInput = (d) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
@@ -108,8 +113,9 @@ function renderAgenda() {
   let mode = "";
   if (A.mode) {
     const r = A.requests.find((x) => x.id === A.mode.requestId);
-    mode = `<div class="ag-mode"><p><b>Proposer des créneaux de 2 h à ${esc(clientName(r))}</b></p>${r.message ? `<p class="note">Son message : « ${esc(r.message)} »</p>` : ""}
+    mode = `<div class="ag-mode"><p><b>Proposer des créneaux à ${esc(clientName(r))}</b></p>${r.message ? `<p class="note">Son message : « ${esc(r.message)} »</p>` : ""}
       <p class="note">Ses préférences : ${esc(r.preferences || "—")}${r.client_note ? ` · « ${esc(r.client_note)} »` : ""}</p>
+      <label style="max-width:220px">Durée du rendez-vous${durSelect("ag-min", A.mode.minutes)}</label>
       <p class="note">Touchez une case libre pour ajouter un créneau (3 maximum). Touchez une proposition pour la retirer. ${A.mode.picks.length}/3 choisi${A.mode.picks.length > 1 ? "s" : ""}.</p>
       <label>Petit mot pour la cliente (facultatif)<input class="field" id="ag-note" maxlength="300" value="${esc(A.mode.note || "")}" placeholder="Ex. : Je peux aussi vous prendre samedi matin."></label>
       <div class="actions"><button class="btn solid" type="button" data-ag="send" ${A.mode.picks.length ? "" : "disabled"}>Envoyer la proposition</button><button class="btn ghost" type="button" data-ag="mode-cancel">Annuler</button></div></div>`;
@@ -186,7 +192,7 @@ function nextSlot() { const d = new Date(); d.setMinutes(Math.ceil(d.getMinutes(
 /* ---------- Propositions ---------- */
 function startProposal(reqId) {
   const r = A.requests.find((x) => x.id === reqId); if (!r) return;
-  A.mode = { requestId: reqId, picks: (r.status === "proposed" ? r.proposals : []).map((p) => ({ start: new Date(p.start), end: new Date(p.end) })).filter((p) => p.start > new Date()), note: r.marie_note || "" };
+  A.mode = { requestId: reqId, picks: (r.status === "proposed" ? r.proposals : []).map((p) => ({ start: new Date(p.start), end: new Date(p.end) })).filter((p) => p.start > new Date()), note: r.marie_note || "", minutes: r.minutes || SLOT_MIN };
   MarieApp.nav("agenda");
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
@@ -195,7 +201,7 @@ function addPick(start) {
   A.mode.note = $("ag-note") ? $("ag-note").value : A.mode.note;
   if (start < new Date()) return MF.toast("Ce créneau est déjà passé.");
   if (A.mode.picks.length >= 3) return MF.toast("3 créneaux maximum. Retirez-en un pour en ajouter un autre.");
-  const end = new Date(start.getTime() + SLOT_MIN * 60000);
+  const end = new Date(start.getTime() + A.mode.minutes * 60000);
   const clash = overlaps(start, end);
   if (clash) return MF.toast(`Occupé : ${clash.kind === "blocked" ? "indisponible" : clash.client_name} à ${hm(new Date(clash.starts_at))}`);
   if (A.mode.picks.some((p) => p.start < end && p.end > start)) return MF.toast("Ce créneau chevauche une autre proposition.");
@@ -207,7 +213,7 @@ async function sendProposal(btn) {
   btn.disabled = true;
   const note = $("ag-note").value.trim();
   const { error } = await db.from("appointment_requests").update({
-    status: "proposed", marie_note: note, updated_at: new Date().toISOString(),
+    status: "proposed", marie_note: note, minutes: A.mode.minutes, updated_at: new Date().toISOString(),
     proposals: A.mode.picks.map((p) => ({ start: p.start.toISOString(), end: p.end.toISOString() }))
   }).eq("id", A.mode.requestId);
   if (error) { btn.disabled = false; return MF.toast("Envoi impossible. Réessayez."); }
@@ -215,6 +221,17 @@ async function sendProposal(btn) {
   MF.toast("Proposition envoyée : la cliente la verra sur sa carte");
   reload();
 }
+
+// Changement de durée pendant une proposition : on recalcule la fin des créneaux déjà choisis
+$("p-agenda").addEventListener("change", (e) => {
+  if (e.target.id !== "ag-min" || !A.mode) return;
+  A.mode.minutes = parseInt(e.target.value, 10);
+  A.mode.note = $("ag-note").value;
+  A.mode.picks = A.mode.picks.map((p) => ({ start: p.start, end: new Date(p.start.getTime() + A.mode.minutes * 60000) }));
+  const clash = A.mode.picks.find((p) => overlaps(p.start, p.end));
+  if (clash) MF.toast(`Attention : la proposition de ${hm(clash.start)} chevauche maintenant un autre rendez-vous.`);
+  render();
+});
 
 /* ---------- Fiche rendez-vous (créer / modifier) ---------- */
 function openAppt({ id, start, kind, clientId }) {
@@ -234,7 +251,7 @@ function openAppt({ id, start, kind, clientId }) {
       <label>Date<input class="field" id="ap-date" type="date" value="${dateInput(s)}"></label>
       <label>Heure<input class="field" id="ap-time" type="time" step="900" value="${timeInput(s)}"></label>
     </div>
-    ${k === "blocked" ? `<label>Durée (minutes)<input class="field" id="ap-min" type="number" min="15" max="720" step="15" value="${minutes}"></label>` : `<p class="note" style="margin:0">Durée : 2 h</p>`}
+    ${k === "blocked" ? `<label>Durée (minutes)<input class="field" id="ap-min" type="number" min="15" max="720" step="15" value="${minutes}"></label>` : `<label>Durée${durSelect("ap-min", minutes)}</label>`}
     ${k === "rdv" ? `<label>Notes<textarea class="field" id="ap-notes" maxlength="500">${esc(a ? a.notes : "")}</textarea></label>` : ""}
     <p class="err" id="ap-err" hidden></p>
     <div class="actions"><button class="btn solid" type="submit">${a ? "Enregistrer" : k === "blocked" ? "Bloquer ce créneau" : "Ajouter le rendez-vous"}</button>
@@ -273,7 +290,7 @@ $("agenda-layer").addEventListener("submit", async (e) => {
   const k = A.sheet.kind;
   const [y, mo, d] = ($("ap-date").value || "").split("-").map(Number);
   const [hh, mm] = ($("ap-time").value || "").split(":").map(Number);
-  const minutes = k === "blocked" ? parseInt($("ap-min").value, 10) : SLOT_MIN;
+  const minutes = parseInt($("ap-min").value, 10);
   if (!y || isNaN(hh)) return bad("Indiquez la date et l'heure.");
   if (!(minutes >= 15 && minutes <= 720)) return bad("La durée doit être entre 15 minutes et 12 heures.");
   const start = new Date(y, mo - 1, d, hh, mm || 0), end = new Date(start.getTime() + minutes * 60000);
