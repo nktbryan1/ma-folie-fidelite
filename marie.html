@@ -99,18 +99,6 @@
       <p class="note" id="l-hint" hidden>Choisissez un mot de passe d'au moins 8 caractères. Vous recevrez un e-mail de confirmation : cliquez sur le lien, puis revenez ici.</p>
       <p class="err" id="l-err" hidden></p>
       <button class="btn solid" type="submit" id="l-submit">Se connecter</button>
-      <button class="linkbtn" type="button" id="forgot">Mot de passe oublié ?</button>
-    </form>
-  </section>
-
-  <!-- Nouveau mot de passe (après le lien reçu par e-mail) -->
-  <section class="panel narrow" id="v-newpass" hidden style="width:100%;margin:0 auto">
-    <h2>Choisir un nouveau mot de passe</h2>
-    <form id="f-newpass" novalidate>
-      <label>Nouveau mot de passe<input class="field" id="np-pass" type="password" autocomplete="new-password" minlength="8"></label>
-      <label>Confirmer<input class="field" id="np-pass2" type="password" autocomplete="new-password" minlength="8"></label>
-      <p class="err" id="np-err" hidden></p>
-      <button class="btn solid" type="submit">Enregistrer le mot de passe</button>
     </form>
   </section>
 
@@ -151,12 +139,11 @@ const S = { clients: new Map(), settings: { stamps: 10, reward: "" }, query: "",
 const goal = () => S.settings.stamps || 10;
 const fullName = (c) => `${c.first_name || ""} ${c.last_name || ""}`.trim() || "Sans nom";
 const norm = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
-const views = ["v-login", "v-wait", "v-app", "v-newpass"];
+const views = ["v-login", "v-wait", "v-app"];
 const MONTHS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
 const UUID_RE = /tampon=([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
 // Un tampon venu d'un QR scanné avec l'appareil photo du téléphone
 let pendingStamp = (location.hash.match(UUID_RE) || [])[1] || null;
-let recovering = /type=recovery/.test(location.hash);
 if (pendingStamp) history.replaceState(null, "", location.pathname);
 const giftThisYear = (c) => (c.visits || []).some((v) => v.t === "gift" && new Date(v.d).getFullYear() === new Date().getFullYear());
 const bdayMonth = (c) => c.birthday ? Number(c.birthday.slice(5, 7)) : 0;
@@ -195,32 +182,12 @@ $("f-login").addEventListener("submit", async (e) => {
   if (S.signup && !res.data.session) { err.textContent = "Compte créé. Ouvrez l'e-mail de confirmation, cliquez sur le lien, puis connectez-vous ici."; err.hidden = false; loginTab(false); return; }
   boot();
 });
-$("forgot").onclick = async () => {
-  const err = $("l-err"), email = $("l-email").value.trim();
-  if (!email) { err.textContent = "Saisissez d'abord votre e-mail ci-dessus, puis touchez « Mot de passe oublié ? »."; err.hidden = false; return; }
-  const { error } = await db.auth.resetPasswordForEmail(email, { redirectTo: MF_CONFIG.siteUrl + "marie.html" });
-  err.textContent = error ? "L'e-mail n'a pas pu être envoyé. Réessayez dans quelques minutes."
-    : "Si ce compte existe, un e-mail vient de partir avec un lien pour choisir un nouveau mot de passe. Pensez à regarder les spams.";
-  err.hidden = false;
-};
-$("f-newpass").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const err = $("np-err"), p1 = $("np-pass").value, p2 = $("np-pass2").value;
-  err.hidden = true;
-  if (p1.length < 8) { err.textContent = "Au moins 8 caractères."; err.hidden = false; return; }
-  if (p1 !== p2) { err.textContent = "Les deux mots de passe ne sont pas identiques."; err.hidden = false; return; }
-  const { error } = await db.auth.updateUser({ password: p1 });
-  if (error) { err.textContent = "Le lien a expiré ou n'est plus valable. Redemandez un e-mail depuis « Mot de passe oublié ? »."; err.hidden = false; return; }
-  recovering = false; history.replaceState(null, "", location.pathname);
-  MF.toast("Mot de passe enregistré"); boot();
-});
 $("btn-logout").onclick = async () => { await db.auth.signOut(); clearInterval(refreshTimer); view("v-login"); status(""); };
 $("wait-retry").onclick = () => boot();
 
 async function boot() {
   status("Chargement…");
   const { data: { session } } = await db.auth.getSession();
-  if (recovering && session) { status(""); view("v-newpass"); return; }
   if (!session) { status(""); view("v-login"); return; }
   const { data: admin, error } = await db.rpc("is_admin");
   if (error) { status("Connexion à la base impossible. Vérifiez internet et rechargez la page."); return; }
@@ -442,8 +409,7 @@ $("layer").addEventListener("click", async (e) => {
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && S.sheet) { if (S.sheet === "show") { S.sheet = "client"; renderSheet(); } else closeSheet(); } });
 
 db.auth.onAuthStateChange((ev) => {
-  if (ev === "PASSWORD_RECOVERY") { recovering = true; view("v-newpass"); status(""); return; }
-  if (ev === "SIGNED_IN" && $("v-app").hidden && $("v-wait").hidden && !recovering) boot();
+  if (ev === "SIGNED_IN" && $("v-app").hidden && $("v-wait").hidden) boot();
 });
 
 /* ---------- Scanner ---------- */
