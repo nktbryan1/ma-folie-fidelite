@@ -39,6 +39,20 @@
 .salon .row span:first-child{flex:none;width:88px;font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);padding-top:3px}
 .salon .row span:last-child{min-width:0;overflow-wrap:anywhere;white-space:pre-line}
 .salon a{color:var(--gold)}
+.appt{display:flex;flex-direction:column;gap:2px;border-left:2px solid var(--gold);padding:4px 0 4px 12px}
+.appt b{font-weight:500;font-size:1.02rem}
+.appt span{color:var(--muted);font-size:.9rem}
+.slots{display:flex;flex-direction:column;gap:8px}
+.slot{display:flex;justify-content:space-between;align-items:center;gap:12px;border:1px solid var(--gold-soft);border-radius:12px;padding:10px 12px;background:var(--ink-3);flex-wrap:wrap}
+.slot b{font-weight:500}
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.chips label{flex-direction:row;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;padding:6px 12px;text-transform:none;letter-spacing:0;font-size:.9rem;color:var(--text);cursor:pointer}
+.chips input{accent-color:var(--gold)}
+.chips label:has(input:checked){border-color:var(--gold);background:#d9b25f1f}
+.status{font-size:.95rem;margin:0}
+.status b{color:var(--gold);font-weight:500}
+select.field{appearance:auto}
+#rdv-body{display:flex;flex-direction:column;gap:14px}
 </style>
 </head>
 <body>
@@ -86,6 +100,11 @@
     <div id="card"></div>
     <p class="progress" id="progress"></p>
     <div class="reward-banner" id="reward" hidden><p></p></div>
+
+    <section class="panel" id="rdv">
+      <p class="section-label" style="margin:0">Mes rendez-vous</p>
+      <div id="rdv-body"><p class="note">Chargement…</p></div>
+    </section>
 
     <div class="panel">
       <p class="section-label" style="margin:0">Mon QR code</p>
@@ -144,8 +163,6 @@ async function loadSettings() {
   settings = data;
   $("reward-line").textContent = `À chaque passage, Marie ajoute un tampon. Au bout de ${data.stamps} passages : ${data.reward}.`;
   const acts = [], info = [];
-  const book = MF.safeUrl(data.booking_url);
-  if (book) acts.push(`<a class="btn solid" href="${esc(book)}" target="_blank" rel="noopener">Prendre rendez-vous</a>`);
   const ig = String(data.instagram || "").replace(/^@/, "").replace(/^https?:\/\/(www\.)?instagram\.com\//, "").replace(/\/.*$/, "");
   if (/^[A-Za-z0-9._]{1,30}$/.test(ig)) acts.push(`<a class="btn" href="https://www.instagram.com/${esc(ig)}/" target="_blank" rel="noopener">Instagram @${esc(ig)}</a>`);
   if (data.salon_phone) info.push(`<div class="row"><span>Téléphone</span><span>${esc(data.salon_phone)}</span></div>`);
@@ -192,7 +209,113 @@ async function loadCard(first = false) {
   $("mylink").value = link.toString();
   $("qr-small").innerHTML = MF.qrSvg(stampUrl());
   show("v-card");
+  loadRdv();
 }
+
+/* ---------- Rendez-vous ---------- */
+let rdvSig = "", rdvData = null, rejecting = null;
+const fmtSlot = (s, e) => {
+  const d = new Date(s), f = new Date(e);
+  const day = new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long" }).format(d);
+  return { day: day.charAt(0).toUpperCase() + day.slice(1), time: `${MF.fmtTime(s)} – ${MF.fmtTime(e)}` };
+};
+async function loadRdv(force = false) {
+  const { data, error } = await db.rpc("my_appointments", { p_token: token });
+  if (error || !data) { if (!rdvData) $("rdv-body").innerHTML = `<p class="note">Les rendez-vous ne sont pas disponibles pour le moment.</p>`; return; }
+  const sig = JSON.stringify([data.requests, data.upcoming]);
+  if (!force && sig === rdvSig && rdvData) return;       // rien n'a changé : on ne touche pas au formulaire
+  if (!force && document.activeElement && $("rdv").contains(document.activeElement) && rdvSig) return; // saisie en cours
+  const was = rdvData && (rdvData.requests || []).find((r) => r.status === "pending");
+  if (was && (data.requests || []).some((r) => r.id === was.id && r.status === "proposed")) MF.toast("Marie vous propose des créneaux !");
+  rdvSig = sig; rdvData = data;
+  renderRdv();
+}
+function renderRdv() {
+  const d = rdvData, parts = [];
+  for (const a of d.upcoming || []) {
+    const t = fmtSlot(a.starts_at, a.ends_at);
+    parts.push(`<div class="appt"><b>${esc(t.day)}</b><span>${esc(t.time)} · ${esc(a.service)}</span></div>`);
+  }
+  if ((d.upcoming || []).length) parts.push(`<p class="note">Pour annuler ou déplacer un rendez-vous, contactez Marie${settings && settings.salon_phone ? " au " + esc(settings.salon_phone) : ""}.</p>`);
+  const open = (d.requests || []).find((r) => r.status === "pending" || r.status === "proposed");
+  const recent = (d.requests || []).find((r) => r.status === "refused");
+  if (open && open.status === "pending") {
+    parts.push(`<p class="status"><b>Demande envoyée</b> pour ${esc(open.service)}. Marie va vous proposer des créneaux : ils s'afficheront ici.</p>
+      ${open.preferences ? `<p class="note">Vos préférences : ${esc(open.preferences)}</p>` : ""}
+      <button class="btn ghost small" type="button" data-rdv="cancel" data-id="${esc(open.id)}" style="align-self:flex-start">Annuler ma demande</button>`);
+  } else if (open && open.status === "proposed") {
+    const slots = (open.proposals || []).map((p, i) => {
+      const t = fmtSlot(p.start, p.end), past = new Date(p.start) < new Date();
+      return `<div class="slot"><span><b>${esc(t.day)}</b><br><span class="note">${esc(t.time)}</span></span>${past ? `<span class="note">Passé</span>` : `<button class="btn solid small" type="button" data-rdv="choose" data-id="${esc(open.id)}" data-i="${i}">Je choisis ce créneau</button>`}</div>`;
+    }).join("");
+    parts.push(`<p class="status"><b>Marie vous propose</b> pour ${esc(open.service)} :</p>
+      ${open.marie_note ? `<p class="note">« ${esc(open.marie_note)} »</p>` : ""}
+      <div class="slots">${slots}</div>
+      ${rejecting === open.id
+        ? `<form id="reject-form" novalidate><label>Qu'est-ce qui vous arrangerait ?<input class="field" id="rj-note" maxlength="300" placeholder="Ex. : plutôt le jeudi après 17 h"></label>
+           <div class="actions"><button class="btn" type="submit">Demander d'autres créneaux</button><button class="btn ghost" type="button" data-rdv="reject-cancel">Retour</button></div></form>`
+        : `<button class="btn ghost small" type="button" data-rdv="reject" data-id="${esc(open.id)}" style="align-self:flex-start">Aucun ne me convient</button>`}`);
+  } else {
+    if (recent) parts.push(`<p class="note">Marie n'a pas pu donner suite à votre demande (${esc(recent.service)})${recent.marie_note ? " : « " + esc(recent.marie_note) + " »" : "."}</p>`);
+    const services = d.services || [];
+    if (!services.length) parts.push(`<p class="note">La prise de rendez-vous n'est pas encore ouverte.</p>`);
+    else parts.push(`<form id="rdv-form" novalidate>
+      <label>Prestation<select class="field" id="rq-service">${services.map((s) => `<option value="${esc(s.name)}">${esc(s.name)} (${dur(s.minutes)})</option>`).join("")}</select></label>
+      <div><p class="section-label">Quand êtes-vous disponible ?</p>
+        <div class="chips">${["Matin", "Midi", "Après-midi", "Fin de journée", "Samedi"].map((x, i) => `<label><input type="checkbox" id="rq-p${i}" value="${x}"> ${x}</label>`).join("")}</div></div>
+      <label>Jours ou dates qui vous arrangent (facultatif)<input class="field" id="rq-days" maxlength="150" placeholder="Ex. : mardi ou jeudi, semaine prochaine"></label>
+      <label>Message pour Marie (facultatif)<textarea class="field" id="rq-msg" maxlength="500" placeholder="Couleur, forme, inspiration…"></textarea></label>
+      <p class="err" id="rq-err" hidden></p>
+      <button class="btn solid" type="submit" id="rq-submit">Demander un rendez-vous</button></form>`);
+  }
+  $("rdv-body").innerHTML = parts.join("");
+}
+const dur = (m) => m >= 60 ? `${Math.floor(m / 60)} h${m % 60 ? String(m % 60).padStart(2, "0") : ""}` : `${m} min`;
+function rdvError(error) {
+  const m = (error && error.message) || "";
+  if (m.includes("already_open")) return "Vous avez déjà une demande en cours.";
+  if (m.includes("slot_taken")) return "Ce créneau vient d'être pris. Choisissez-en un autre ou demandez-en d'autres.";
+  if (m.includes("slot_past")) return "Ce créneau est déjà passé.";
+  if (m.includes("too_many")) return "Beaucoup de demandes en ce moment. Réessayez dans quelques minutes.";
+  if (m.includes("not_available")) return "Cette demande a changé entre-temps. La page vient d'être mise à jour.";
+  return "L'envoi n'a pas fonctionné. Vérifiez votre connexion et réessayez.";
+}
+$("rdv").addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-rdv]"); if (!b) return;
+  const act = b.dataset.rdv, id = b.dataset.id;
+  if (act === "reject") { rejecting = id; renderRdv(); setTimeout(() => $("rj-note") && $("rj-note").focus(), 30); return; }
+  if (act === "reject-cancel") { rejecting = null; renderRdv(); return; }
+  b.disabled = true;
+  if (act === "cancel") {
+    const { error } = await db.rpc("cancel_request", { p_token: token, p_request: id });
+    if (error) MF.toast(rdvError(error)); else MF.toast("Demande annulée");
+  } else if (act === "choose") {
+    const { data, error } = await db.rpc("choose_slot", { p_token: token, p_request: id, p_index: Number(b.dataset.i) });
+    if (error) MF.toast(rdvError(error));
+    else { const t = fmtSlot(data.starts_at, data.ends_at); MF.toast(`Rendez-vous confirmé : ${t.day} à ${MF.fmtTime(data.starts_at)}`); }
+  }
+  loadRdv(true);
+});
+$("rdv").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (e.target.id === "reject-form") {
+    const { error } = await db.rpc("reject_slots", { p_token: token, p_request: rejecting, p_note: $("rj-note").value });
+    rejecting = null;
+    MF.toast(error ? rdvError(error) : "C'est noté : Marie va vous proposer d'autres créneaux");
+    return loadRdv(true);
+  }
+  if (e.target.id !== "rdv-form") return;
+  const prefs = [...$("rdv").querySelectorAll(".chips input:checked")].map((x) => x.value);
+  const days = $("rq-days").value.trim();
+  const preferences = [prefs.join(", "), days].filter(Boolean).join(" · ");
+  const err = $("rq-err"); err.hidden = true;
+  if (!preferences) { err.textContent = "Indiquez au moins un moment qui vous arrange."; err.hidden = false; return; }
+  $("rq-submit").disabled = true;
+  const { error } = await db.rpc("request_appointment", { p_token: token, p_service: $("rq-service").value, p_preferences: preferences, p_message: $("rq-msg").value });
+  if (error) { $("rq-submit").disabled = false; err.textContent = rdvError(error); err.hidden = false; return; }
+  MF.toast("Demande envoyée à Marie");
+  loadRdv(true);
+});
 const stampUrl = () => MF_CONFIG.siteUrl + "marie.html#tampon=" + token;
 
 function openCard(t) {
@@ -264,7 +387,7 @@ $("copy").onclick = async () => {
   catch { $("mylink").select(); MF.toast("Lien sélectionné : copiez-le"); }
 };
 $("forget").onclick = () => {
-  store.clear(); token = null; lastStamps = null; clearInterval(pollTimer);
+  store.clear(); token = null; lastStamps = null; clearInterval(pollTimer); rdvSig = ""; rdvData = null; rejecting = null;
   history.replaceState(null, "", location.pathname);
   tab("find"); show("v-start");
 };
