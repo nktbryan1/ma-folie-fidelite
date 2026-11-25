@@ -81,6 +81,7 @@
     <img src="logo.jpg" alt="Logo Ma Folie et Moi by Marie">
     <div><h1>Ma Folie et Moi</h1><p>Espace Marie · cartes de fidélité</p></div>
     <div class="right actions" id="top-actions" hidden>
+      <button class="btn small" id="btn-notif" type="button">Notifications</button>
       <a class="btn ghost small" href="affiche.html">Affiche QR</a>
       <button class="btn ghost small" id="btn-settings" type="button">Réglages</button>
       <button class="btn ghost small" id="btn-logout" type="button">Déconnexion</button>
@@ -213,7 +214,9 @@ async function boot() {
   await refresh();
   status("");
   window.MarieApp.ready = true;
-  if (window.Agenda) window.Agenda.start();
+  if (window.Agenda) await window.Agenda.start();
+  navFromHash();
+  renderNotifBtn();
   if (pendingStamp) { const t = pendingStamp; pendingStamp = null; stampByToken(t); }
   clearInterval(refreshTimer);
   refreshTimer = setInterval(() => { if (!document.hidden && !S.sheet) refresh(); }, 30000);
@@ -503,6 +506,41 @@ function nav(which) {
 $("nav-cards").onclick = () => nav("cards");
 $("nav-agenda").onclick = () => nav("agenda");
 $("nav-requests").onclick = () => nav("requests");
+
+/* ---------- Notifications ---------- */
+async function renderNotifBtn() {
+  const st = MF.pushState(), b = $("btn-notif");
+  const sub = st === "granted" ? await MF.pushSubscription().catch(() => null) : null;
+  b.textContent = sub ? "Notifications : activées" : "Activer les notifications";
+  b.classList.toggle("solid", !sub);
+  b.dataset.on = sub ? "1" : "";
+  if (sub) { const j = sub.toJSON(); db.rpc("save_marie_push", { p_endpoint: j.endpoint, p_p256dh: j.keys.p256dh, p_auth: j.keys.auth }); }
+}
+$("btn-notif").onclick = async () => {
+  const st = MF.pushState(), b = $("btn-notif");
+  if (st === "ios-install") return MF.toast("Sur iPhone : ajoutez d'abord l'Espace Marie à l'écran d'accueil, puis ouvrez-le depuis l'icône.");
+  if (st === "unsupported") return MF.toast("Ce navigateur ne permet pas les notifications.");
+  if (st === "denied") return MF.toast("Notifications bloquées : autorisez-les dans les réglages du navigateur.");
+  b.disabled = true;
+  try {
+    if (b.dataset.on) { await MF.pushUnsubscribe(); MF.toast("Notifications désactivées sur ce téléphone"); }
+    else {
+      const s = await MF.pushSubscribe();
+      const { error } = await db.rpc("save_marie_push", { p_endpoint: s.endpoint, p_p256dh: s.p256dh, p_auth: s.auth });
+      if (error) throw error;
+      MF.toast("Notifications activées : nouvelles demandes et rendez-vous confirmés");
+    }
+  } catch (e) { MF.toast(e && e.message === "denied" ? "Vous avez refusé les notifications." : "Activation impossible pour le moment."); }
+  b.disabled = false;
+  renderNotifBtn();
+};
+
+// Ouverture depuis une notification : #demandes ou #agenda
+function navFromHash() {
+  const h = location.hash.replace("#", "");
+  if (h === "demandes" || h === "agenda") { nav(h === "demandes" ? "requests" : "agenda"); history.replaceState(null, "", location.pathname); }
+}
+window.addEventListener("hashchange", () => { if (!$("v-app").hidden) navFromHash(); });
 
 // Partagé avec agenda.js
 window.MarieApp = { S, fullName, goal, nav, openClient, refresh, ready: false };

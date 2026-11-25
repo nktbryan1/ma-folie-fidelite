@@ -38,6 +38,37 @@ window.MF = {
   },
   // Lien sûr (https uniquement)
   safeUrl(u) { try { const x = new URL(u); return x.protocol === "https:" ? x.href : ""; } catch { return ""; } },
+  // ---- Notifications push ----
+  pushState() {
+    const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone;
+    if (ios && !standalone) return "ios-install";          // sur iPhone : seulement depuis l'app installée
+    if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) return "unsupported";
+    return Notification.permission;                        // "default" | "granted" | "denied"
+  },
+  async pushSubscription() {
+    if (MF.pushState() !== "granted") return null;
+    const reg = await navigator.serviceWorker.ready;
+    return reg.pushManager.getSubscription();
+  },
+  async pushSubscribe() {
+    const perm = await Notification.requestPermission();
+    if (perm !== "granted") throw new Error("denied");
+    const reg = await navigator.serviceWorker.ready;
+    const { data: key, error } = await MF.db.rpc("push_public_key");
+    if (error || !key) throw new Error("no_key");
+    const raw = Uint8Array.from(atob(key.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((key.length + 3) % 4)), (c) => c.charCodeAt(0));
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: raw });
+    const j = sub.toJSON();
+    return { endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth };
+  },
+  async pushUnsubscribe() {
+    const sub = await MF.pushSubscription();
+    if (!sub) return;
+    await MF.db.rpc("remove_push", { p_endpoint: sub.endpoint });
+    await sub.unsubscribe();
+  },
   registerSW() { if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {}); },
   toast(msg) {
     let t = document.getElementById("toast");
