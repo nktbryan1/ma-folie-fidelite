@@ -54,7 +54,7 @@ const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() ==
 const hm = (d) => new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit" }).format(d);
 const dayLong = (d) => { const s = new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long" }).format(d); return s.charAt(0).toUpperCase() + s.slice(1); };
 const dur = (m) => m >= 60 ? `${Math.floor(m / 60)} h${m % 60 ? String(m % 60).padStart(2, "0") : ""}` : `${m} min`;
-const services = () => (MarieApp.S.settings.services || []);
+const SLOT_MIN = 120; // tous les rendez-vous durent 2 h
 const pad = (n) => String(n).padStart(2, "0");
 const dateInput = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const timeInput = (d) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
@@ -81,9 +81,9 @@ async function reload() { await load(); render(); }
 /* ---------- Événements affichés ---------- */
 function events() {
   const ev = [];
-  for (const a of A.appts) ev.push({ kind: a.kind === "blocked" ? "blocked" : "rdv", start: new Date(a.starts_at), end: new Date(a.ends_at), title: a.kind === "blocked" ? (a.notes || "Indisponible") : (a.client_name || "Rendez-vous"), sub: a.service, id: a.id });
+  for (const a of A.appts) ev.push({ kind: a.kind === "blocked" ? "blocked" : "rdv", start: new Date(a.starts_at), end: new Date(a.ends_at), title: a.kind === "blocked" ? (a.notes || "Indisponible") : (a.client_name || "Rendez-vous"), sub: "", id: a.id });
   for (const r of A.requests) if (r.status === "proposed" && (!A.mode || A.mode.requestId !== r.id))
-    (r.proposals || []).forEach((p, i) => ev.push({ kind: "hold", start: new Date(p.start), end: new Date(p.end), title: `Proposé · ${clientName(r)}`, sub: r.service, reqId: r.id }));
+    (r.proposals || []).forEach((p, i) => ev.push({ kind: "hold", start: new Date(p.start), end: new Date(p.end), title: `Proposé · ${clientName(r)}`, sub: "", reqId: r.id }));
   if (A.mode) A.mode.picks.forEach((p, i) => ev.push({ kind: "pick", start: p.start, end: p.end, title: `Proposition ${i + 1}`, sub: "fin " + hm(p.end), pick: i }));
   return ev;
 }
@@ -108,7 +108,7 @@ function renderAgenda() {
   let mode = "";
   if (A.mode) {
     const r = A.requests.find((x) => x.id === A.mode.requestId);
-    mode = `<div class="ag-mode"><p><b>Proposer des créneaux à ${esc(clientName(r))}</b> · ${esc(r.service)} (${dur(r.minutes)})</p>
+    mode = `<div class="ag-mode"><p><b>Proposer des créneaux de 2 h à ${esc(clientName(r))}</b></p>${r.message ? `<p class="note">Son message : « ${esc(r.message)} »</p>` : ""}
       <p class="note">Ses préférences : ${esc(r.preferences || "—")}${r.client_note ? ` · « ${esc(r.client_note)} »` : ""}</p>
       <p class="note">Touchez une case libre pour ajouter un créneau (3 maximum). Touchez une proposition pour la retirer. ${A.mode.picks.length}/3 choisi${A.mode.picks.length > 1 ? "s" : ""}.</p>
       <label>Petit mot pour la cliente (facultatif)<input class="field" id="ag-note" maxlength="300" value="${esc(A.mode.note || "")}" placeholder="Ex. : Je peux aussi vous prendre samedi matin."></label>
@@ -195,7 +195,7 @@ function addPick(start) {
   A.mode.note = $("ag-note") ? $("ag-note").value : A.mode.note;
   if (start < new Date()) return MF.toast("Ce créneau est déjà passé.");
   if (A.mode.picks.length >= 3) return MF.toast("3 créneaux maximum. Retirez-en un pour en ajouter un autre.");
-  const end = new Date(start.getTime() + r.minutes * 60000);
+  const end = new Date(start.getTime() + SLOT_MIN * 60000);
   const clash = overlaps(start, end);
   if (clash) return MF.toast(`Occupé : ${clash.kind === "blocked" ? "indisponible" : clash.client_name} à ${hm(new Date(clash.starts_at))}`);
   if (A.mode.picks.some((p) => p.start < end && p.end > start)) return MF.toast("Ce créneau chevauche une autre proposition.");
@@ -221,22 +221,20 @@ function openAppt({ id, start, kind, clientId }) {
   const a = id ? A.appts.find((x) => x.id === id) : null;
   const k = a ? a.kind : (kind || "rdv");
   const s = a ? new Date(a.starts_at) : start;
-  const minutes = a ? Math.round((new Date(a.ends_at) - s) / 60000) : (k === "blocked" ? 60 : (services()[0]?.minutes || 60));
+  const minutes = a ? Math.round((new Date(a.ends_at) - s) / 60000) : (k === "blocked" ? 60 : SLOT_MIN);
   const clients = [...MarieApp.S.clients.values()].sort((x, y) => MarieApp.fullName(x).localeCompare(MarieApp.fullName(y), "fr"));
   const selClient = a ? a.client_id : clientId;
   A.sheet = { id: a?.id, kind: k, confirming: false }; A.warned = false;
-  const svc = services();
   const body = `<form id="appt-form" novalidate>
     ${k === "rdv" ? `
       <label>Cliente<select class="field" id="ap-client"><option value="">— Autre personne (nom libre) —</option>${clients.map((c) => `<option value="${esc(c.id)}" ${c.id === selClient ? "selected" : ""}>${esc(MarieApp.fullName(c))} · ${esc(fmtPhone(c.phone))}</option>`).join("")}</select></label>
-      <label id="ap-name-wrap" ${selClient ? "hidden" : ""}>Nom<input class="field" id="ap-name" maxlength="120" value="${esc(a && !a.client_id ? a.client_name : "")}"></label>
-      <label>Prestation<select class="field" id="ap-service">${svc.map((x) => `<option value="${esc(x.name)}" data-min="${x.minutes}" ${a && a.service === x.name ? "selected" : ""}>${esc(x.name)} (${dur(x.minutes)})</option>`).join("")}<option value="" ${a && !svc.some((x) => x.name === a.service) ? "selected" : ""}>Autre</option></select></label>`
+      <label id="ap-name-wrap" ${selClient ? "hidden" : ""}>Nom<input class="field" id="ap-name" maxlength="120" value="${esc(a && !a.client_id ? a.client_name : "")}"></label>`
       : `<label>Motif (facultatif)<input class="field" id="ap-reason" maxlength="120" value="${esc(a ? a.notes : "")}" placeholder="Pause, formation, congé…"></label>`}
     <div class="two">
       <label>Date<input class="field" id="ap-date" type="date" value="${dateInput(s)}"></label>
       <label>Heure<input class="field" id="ap-time" type="time" step="900" value="${timeInput(s)}"></label>
     </div>
-    <label>Durée (minutes)<input class="field" id="ap-min" type="number" min="15" max="720" step="15" value="${minutes}"></label>
+    ${k === "blocked" ? `<label>Durée (minutes)<input class="field" id="ap-min" type="number" min="15" max="720" step="15" value="${minutes}"></label>` : `<p class="note" style="margin:0">Durée : 2 h</p>`}
     ${k === "rdv" ? `<label>Notes<textarea class="field" id="ap-notes" maxlength="500">${esc(a ? a.notes : "")}</textarea></label>` : ""}
     <p class="err" id="ap-err" hidden></p>
     <div class="actions"><button class="btn solid" type="submit">${a ? "Enregistrer" : k === "blocked" ? "Bloquer ce créneau" : "Ajouter le rendez-vous"}</button>
@@ -246,9 +244,8 @@ function openAppt({ id, start, kind, clientId }) {
   const title = a ? (k === "blocked" ? "Créneau indisponible" : "Rendez-vous") : (k === "blocked" ? "Bloquer un créneau" : "Nouveau rendez-vous");
   $("agenda-layer").innerHTML = `<div class="scrim" id="ag-scrim"><div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(title)}">
     <div class="sheet-head"><h2>${esc(title)}${a ? `<span class="sub">${esc(dayLong(s))} · ${esc(hm(s))}</span>` : ""}</h2><button class="x" type="button" data-ap="close" aria-label="Fermer">×</button></div>${body}</div></div>`;
-  const cs = $("ap-client"), sv = $("ap-service");
+  const cs = $("ap-client");
   if (cs) cs.onchange = () => { $("ap-name-wrap").hidden = !!cs.value; };
-  if (sv) sv.onchange = () => { const m = sv.selectedOptions[0].dataset.min; if (m) $("ap-min").value = m; };
 }
 function closeAppt() { A.sheet = null; $("agenda-layer").innerHTML = ""; }
 
@@ -276,7 +273,7 @@ $("agenda-layer").addEventListener("submit", async (e) => {
   const k = A.sheet.kind;
   const [y, mo, d] = ($("ap-date").value || "").split("-").map(Number);
   const [hh, mm] = ($("ap-time").value || "").split(":").map(Number);
-  const minutes = parseInt($("ap-min").value, 10);
+  const minutes = k === "blocked" ? parseInt($("ap-min").value, 10) : SLOT_MIN;
   if (!y || isNaN(hh)) return bad("Indiquez la date et l'heure.");
   if (!(minutes >= 15 && minutes <= 720)) return bad("La durée doit être entre 15 minutes et 12 heures.");
   const start = new Date(y, mo - 1, d, hh, mm || 0), end = new Date(start.getTime() + minutes * 60000);
@@ -286,7 +283,6 @@ $("agenda-layer").addEventListener("submit", async (e) => {
     row.client_id = cid || null;
     row.client_name = c ? MarieApp.fullName(c) : $("ap-name").value.trim();
     if (!row.client_name) return bad("Choisissez une cliente ou indiquez un nom.");
-    row.service = $("ap-service").value;
     row.notes = $("ap-notes").value.trim();
   } else { row.notes = $("ap-reason").value.trim(); row.client_name = ""; row.service = ""; }
   const clash = overlaps(start, end, A.sheet.id);
@@ -310,7 +306,6 @@ function renderRequests() {
     return `<article class="rq ${r.status}">
       <div class="rq-top"><span><b>${esc(clientName(r))}</b><br><span class="note">${esc(fmtPhone(r.clients?.phone))} · demandé le ${esc(created)}</span></span>
         <span class="rq-state ${r.status}">${r.status === "pending" ? "À traiter" : "Attend la cliente"}</span></div>
-      <p><b style="font-weight:500">${esc(r.service)}</b> · ${dur(r.minutes)}</p>
       <p class="note">Disponibilités : ${esc(r.preferences || "—")}</p>
       ${r.message ? `<p class="note">Message : « ${esc(r.message)} »</p>` : ""}
       ${r.client_note ? `<p class="note">Aucun créneau ne lui convenait : « ${esc(r.client_note)} »</p>` : ""}

@@ -1,6 +1,6 @@
-// Service worker minimal : rend le site installable et garde les fichiers du site pour un affichage rapide.
-// Les données (Supabase) passent toujours par le réseau.
-const CACHE = "mafolie-v3";
+﻿// Service worker minimal : rend le site installable et garde les fichiers du site pour un affichage rapide.
+// Les donnÃ©es (Supabase) passent toujours par le rÃ©seau.
+const CACHE = "mafolie-v4";
 const FILES = ["./", "index.html", "marie.html", "agenda.js", "style.css", "config.js", "logo.jpg", "icon-192.png"];
 self.addEventListener("install", (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)).then(() => self.skipWaiting())); });
 self.addEventListener("activate", (e) => {
@@ -9,7 +9,7 @@ self.addEventListener("activate", (e) => {
 self.addEventListener("fetch", (e) => {
   const u = new URL(e.request.url);
   if (e.request.method !== "GET" || u.origin !== location.origin) return;
-  // Réseau d'abord (toujours la dernière version), cache si hors ligne
+  // RÃ©seau d'abord (toujours la derniÃ¨re version), cache si hors ligne
   e.respondWith(fetch(e.request).then((r) => {
     if (r.ok) { const copy = r.clone(); caches.open(CACHE).then((c) => c.put(e.request, copy)); }
     return r;

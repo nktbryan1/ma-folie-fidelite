@@ -234,13 +234,13 @@ function renderRdv() {
   const d = rdvData, parts = [];
   for (const a of d.upcoming || []) {
     const t = fmtSlot(a.starts_at, a.ends_at);
-    parts.push(`<div class="appt"><b>${esc(t.day)}</b><span>${esc(t.time)} · ${esc(a.service)}</span></div>`);
+    parts.push(`<div class="appt"><b>${esc(t.day)}</b><span>${esc(t.time)}</span></div>`);
   }
   if ((d.upcoming || []).length) parts.push(`<p class="note">Pour annuler ou déplacer un rendez-vous, contactez Marie${settings && settings.salon_phone ? " au " + esc(settings.salon_phone) : ""}.</p>`);
   const open = (d.requests || []).find((r) => r.status === "pending" || r.status === "proposed");
   const recent = (d.requests || []).find((r) => r.status === "refused");
   if (open && open.status === "pending") {
-    parts.push(`<p class="status"><b>Demande envoyée</b> pour ${esc(open.service)}. Marie va vous proposer des créneaux : ils s'afficheront ici.</p>
+    parts.push(`<p class="status"><b>Demande envoyée.</b> Marie va vous proposer des créneaux : ils s'afficheront ici.</p>
       ${open.preferences ? `<p class="note">Vos préférences : ${esc(open.preferences)}</p>` : ""}
       <button class="btn ghost small" type="button" data-rdv="cancel" data-id="${esc(open.id)}" style="align-self:flex-start">Annuler ma demande</button>`);
   } else if (open && open.status === "proposed") {
@@ -248,7 +248,7 @@ function renderRdv() {
       const t = fmtSlot(p.start, p.end), past = new Date(p.start) < new Date();
       return `<div class="slot"><span><b>${esc(t.day)}</b><br><span class="note">${esc(t.time)}</span></span>${past ? `<span class="note">Passé</span>` : `<button class="btn solid small" type="button" data-rdv="choose" data-id="${esc(open.id)}" data-i="${i}">Je choisis ce créneau</button>`}</div>`;
     }).join("");
-    parts.push(`<p class="status"><b>Marie vous propose</b> pour ${esc(open.service)} :</p>
+    parts.push(`<p class="status"><b>Marie vous propose</b> ces créneaux :</p>
       ${open.marie_note ? `<p class="note">« ${esc(open.marie_note)} »</p>` : ""}
       <div class="slots">${slots}</div>
       ${rejecting === open.id
@@ -256,15 +256,12 @@ function renderRdv() {
            <div class="actions"><button class="btn" type="submit">Demander d'autres créneaux</button><button class="btn ghost" type="button" data-rdv="reject-cancel">Retour</button></div></form>`
         : `<button class="btn ghost small" type="button" data-rdv="reject" data-id="${esc(open.id)}" style="align-self:flex-start">Aucun ne me convient</button>`}`);
   } else {
-    if (recent) parts.push(`<p class="note">Marie n'a pas pu donner suite à votre demande (${esc(recent.service)})${recent.marie_note ? " : « " + esc(recent.marie_note) + " »" : "."}</p>`);
-    const services = d.services || [];
-    if (!services.length) parts.push(`<p class="note">La prise de rendez-vous n'est pas encore ouverte.</p>`);
-    else parts.push(`<form id="rdv-form" novalidate>
-      <label>Prestation<select class="field" id="rq-service">${services.map((s) => `<option value="${esc(s.name)}">${esc(s.name)} (${dur(s.minutes)})</option>`).join("")}</select></label>
+    if (recent) parts.push(`<p class="note">Marie n'a pas pu donner suite à votre dernière demande${recent.marie_note ? " : « " + esc(recent.marie_note) + " »" : "."}</p>`);
+    parts.push(`<form id="rdv-form" novalidate>
       <div><p class="section-label">Quand êtes-vous disponible ?</p>
         <div class="chips">${["Matin", "Midi", "Après-midi", "Fin de journée", "Samedi"].map((x, i) => `<label><input type="checkbox" id="rq-p${i}" value="${x}"> ${x}</label>`).join("")}</div></div>
       <label>Jours ou dates qui vous arrangent (facultatif)<input class="field" id="rq-days" maxlength="150" placeholder="Ex. : mardi ou jeudi, semaine prochaine"></label>
-      <label>Message pour Marie (facultatif)<textarea class="field" id="rq-msg" maxlength="500" placeholder="Couleur, forme, inspiration…"></textarea></label>
+      <label>Message pour Marie (facultatif)<textarea class="field" id="rq-msg" maxlength="500" placeholder="Ce que vous souhaitez : pose, remplissage, couleur, inspiration…"></textarea></label>
       <p class="err" id="rq-err" hidden></p>
       <button class="btn solid" type="submit" id="rq-submit">Demander un rendez-vous</button></form>`);
   }
@@ -311,7 +308,7 @@ $("rdv").addEventListener("submit", async (e) => {
   const err = $("rq-err"); err.hidden = true;
   if (!preferences) { err.textContent = "Indiquez au moins un moment qui vous arrange."; err.hidden = false; return; }
   $("rq-submit").disabled = true;
-  const { error } = await db.rpc("request_appointment", { p_token: token, p_service: $("rq-service").value, p_preferences: preferences, p_message: $("rq-msg").value });
+  const { error } = await db.rpc("request_appointment", { p_token: token, p_preferences: preferences, p_message: $("rq-msg").value });
   if (error) { $("rq-submit").disabled = false; err.textContent = rdvError(error); err.hidden = false; return; }
   MF.toast("Demande envoyée à Marie");
   loadRdv(true);
