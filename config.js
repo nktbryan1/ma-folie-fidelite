@@ -29,6 +29,16 @@ window.MF = {
       <div class="stamps" style="grid-template-columns:repeat(${cols},1fr)">${stamps}</div>
       <div class="card-foot"><span><b>${n}/${goal}</b> passages</span><span>${goal}ᵉ passage : ${MF.esc(reward)}</span></div></div>`;
   },
+  // QR code en SVG (nécessite qrcode-generator)
+  qrSvg(text) {
+    const qr = qrcode(0, "M"); qr.addData(text); qr.make();
+    const n = qr.getModuleCount(); let d = "";
+    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (qr.isDark(r, c)) d += `M${c} ${r}h1v1h-1z`;
+    return `<svg viewBox="-2 -2 ${n + 4} ${n + 4}" shape-rendering="crispEdges" xmlns="http://www.w3.org/2000/svg"><rect x="-2" y="-2" width="${n + 4}" height="${n + 4}" fill="#fff"/><path d="${d}" fill="#0d0a0c"/></svg>`;
+  },
+  // Lien sûr (https uniquement)
+  safeUrl(u) { try { const x = new URL(u); return x.protocol === "https:" ? x.href : ""; } catch { return ""; } },
+  registerSW() { if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {}); },
   toast(msg) {
     let t = document.getElementById("toast");
     if (!t) { t = document.createElement("div"); t.id = "toast"; t.className = "toast"; t.setAttribute("role", "status"); document.body.append(t); }

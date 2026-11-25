@@ -6,8 +6,13 @@
 <title>Espace Marie · Ma Folie et Moi</title>
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#0d0a0c">
-<link rel="icon" href="logo.jpg">
-<link rel="apple-touch-icon" href="logo.jpg">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Espace Marie">
+<link rel="manifest" href="manifest-marie.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Great+Vibes&family=Jost:wght@300;400;500;600&display=swap">
 <link rel="stylesheet" href="style.css">
@@ -54,6 +59,18 @@
   padding:calc(24px + env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) calc(24px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
 .show .card{width:min(560px,100%)}
 .show p{margin:0;color:var(--muted);text-align:center}
+.linkbtn{background:none;border:0;color:var(--muted);text-decoration:underline;padding:0;align-self:flex-start;font-size:.9rem}
+.bdays{display:flex;flex-direction:column;gap:10px}
+.bdays .chips{display:flex;gap:8px;flex-wrap:wrap}
+.bdays button{border:1px solid var(--gold-soft);background:var(--ink-2);color:var(--text);border-radius:999px;padding:6px 12px;font-size:.88rem}
+.bdays button b{color:var(--gold);font-weight:500;font-variant-numeric:tabular-nums}
+.bday-banner{border:1px solid var(--gold-soft);border-radius:12px;padding:12px 14px;display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.bday-banner p{margin:0}
+.scan{position:fixed;inset:0;z-index:35;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;
+  padding:calc(20px + env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) calc(20px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+.scan .frame{position:relative;width:min(90vw,420px);aspect-ratio:1;border-radius:18px;overflow:hidden;border:2px solid var(--gold)}
+.scan video{width:100%;height:100%;object-fit:cover;display:block}
+.scan p{margin:0;color:var(--text);text-align:center}
 </style>
 </head>
 <body>
@@ -82,6 +99,18 @@
       <p class="note" id="l-hint" hidden>Choisissez un mot de passe d'au moins 8 caractères. Vous recevrez un e-mail de confirmation : cliquez sur le lien, puis revenez ici.</p>
       <p class="err" id="l-err" hidden></p>
       <button class="btn solid" type="submit" id="l-submit">Se connecter</button>
+      <button class="linkbtn" type="button" id="forgot">Mot de passe oublié ?</button>
+    </form>
+  </section>
+
+  <!-- Nouveau mot de passe (après le lien reçu par e-mail) -->
+  <section class="panel narrow" id="v-newpass" hidden style="width:100%;margin:0 auto">
+    <h2>Choisir un nouveau mot de passe</h2>
+    <form id="f-newpass" novalidate>
+      <label>Nouveau mot de passe<input class="field" id="np-pass" type="password" autocomplete="new-password" minlength="8"></label>
+      <label>Confirmer<input class="field" id="np-pass2" type="password" autocomplete="new-password" minlength="8"></label>
+      <p class="err" id="np-err" hidden></p>
+      <button class="btn solid" type="submit">Enregistrer le mot de passe</button>
     </form>
   </section>
 
@@ -101,13 +130,16 @@
     </section>
     <div class="toolbar">
       <input class="search" id="search" type="search" placeholder="Rechercher une cliente (nom ou téléphone)" autocomplete="off">
-      <button class="btn solid" id="btn-new" type="button">+ Nouvelle cliente</button>
+      <button class="btn solid" id="btn-scan" type="button">Scanner une carte</button>
+      <button class="btn" id="btn-new" type="button">+ Nouvelle cliente</button>
     </div>
+    <section class="bdays" id="bdays" hidden></section>
     <div class="list" id="list" aria-live="polite"></div>
   </div>
 </div>
 <div id="layer"></div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="config.js"></script>
 <script>
@@ -119,7 +151,15 @@ const S = { clients: new Map(), settings: { stamps: 10, reward: "" }, query: "",
 const goal = () => S.settings.stamps || 10;
 const fullName = (c) => `${c.first_name || ""} ${c.last_name || ""}`.trim() || "Sans nom";
 const norm = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
-const views = ["v-login", "v-wait", "v-app"];
+const views = ["v-login", "v-wait", "v-app", "v-newpass"];
+const MONTHS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
+const UUID_RE = /tampon=([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
+// Un tampon venu d'un QR scanné avec l'appareil photo du téléphone
+let pendingStamp = (location.hash.match(UUID_RE) || [])[1] || null;
+let recovering = /type=recovery/.test(location.hash);
+if (pendingStamp) history.replaceState(null, "", location.pathname);
+const giftThisYear = (c) => (c.visits || []).some((v) => v.t === "gift" && new Date(v.d).getFullYear() === new Date().getFullYear());
+const bdayMonth = (c) => c.birthday ? Number(c.birthday.slice(5, 7)) : 0;
 const view = (id) => { for (const v of views) $(v).hidden = v !== id; $("top-actions").hidden = id !== "v-app"; };
 const status = (m) => { $("status").textContent = m || ""; $("status").hidden = !m; };
 let refreshTimer = null;
@@ -155,12 +195,32 @@ $("f-login").addEventListener("submit", async (e) => {
   if (S.signup && !res.data.session) { err.textContent = "Compte créé. Ouvrez l'e-mail de confirmation, cliquez sur le lien, puis connectez-vous ici."; err.hidden = false; loginTab(false); return; }
   boot();
 });
+$("forgot").onclick = async () => {
+  const err = $("l-err"), email = $("l-email").value.trim();
+  if (!email) { err.textContent = "Saisissez d'abord votre e-mail ci-dessus, puis touchez « Mot de passe oublié ? »."; err.hidden = false; return; }
+  const { error } = await db.auth.resetPasswordForEmail(email, { redirectTo: MF_CONFIG.siteUrl + "marie.html" });
+  err.textContent = error ? "L'e-mail n'a pas pu être envoyé. Réessayez dans quelques minutes."
+    : "Si ce compte existe, un e-mail vient de partir avec un lien pour choisir un nouveau mot de passe. Pensez à regarder les spams.";
+  err.hidden = false;
+};
+$("f-newpass").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const err = $("np-err"), p1 = $("np-pass").value, p2 = $("np-pass2").value;
+  err.hidden = true;
+  if (p1.length < 8) { err.textContent = "Au moins 8 caractères."; err.hidden = false; return; }
+  if (p1 !== p2) { err.textContent = "Les deux mots de passe ne sont pas identiques."; err.hidden = false; return; }
+  const { error } = await db.auth.updateUser({ password: p1 });
+  if (error) { err.textContent = "Le lien a expiré ou n'est plus valable. Redemandez un e-mail depuis « Mot de passe oublié ? »."; err.hidden = false; return; }
+  recovering = false; history.replaceState(null, "", location.pathname);
+  MF.toast("Mot de passe enregistré"); boot();
+});
 $("btn-logout").onclick = async () => { await db.auth.signOut(); clearInterval(refreshTimer); view("v-login"); status(""); };
 $("wait-retry").onclick = () => boot();
 
 async function boot() {
   status("Chargement…");
   const { data: { session } } = await db.auth.getSession();
+  if (recovering && session) { status(""); view("v-newpass"); return; }
   if (!session) { status(""); view("v-login"); return; }
   const { data: admin, error } = await db.rpc("is_admin");
   if (error) { status("Connexion à la base impossible. Vérifiez internet et rechargez la page."); return; }
@@ -172,6 +232,7 @@ async function boot() {
   view("v-app");
   await refresh();
   status("");
+  if (pendingStamp) { const t = pendingStamp; pendingStamp = null; stampByToken(t); }
   clearInterval(refreshTimer);
   refreshTimer = setInterval(() => { if (!document.hidden && !S.sheet) refresh(); }, 30000);
 }
@@ -181,7 +242,7 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden && !$
 async function refresh() {
   const [c, s] = await Promise.all([
     db.from("clients").select("*").order("created_at", { ascending: false }),
-    db.from("settings").select("stamps,reward").eq("id", 1).maybeSingle()
+    db.from("settings").select("*").eq("id", 1).maybeSingle()
   ]);
   if (c.error) { status("Les cartes n'ont pas pu être chargées. Rechargez la page."); return; }
   S.clients = new Map(c.data.map((x) => [x.id, x]));
@@ -220,9 +281,17 @@ function render() {
       <span class="meta">${ready ? `<span class="chip">Récompense prête</span>` : isNew ? `<span class="chip new">Nouvelle inscrite</span>` : `<span class="count">${n} / ${goal()}</span>`}<span class="dots" aria-hidden="true">${dots}</span></span></button>`;
   }
   $("list").innerHTML = html;
+
+  // Anniversaires du mois
+  const m = now.getMonth() + 1;
+  const bd = [...S.clients.values()].filter((c) => bdayMonth(c) === m).sort((a, b) => a.birthday.slice(8) - b.birthday.slice(8));
+  $("bdays").hidden = !bd.length;
+  $("bdays").innerHTML = bd.length ? `<p class="section-label" style="margin:0">Anniversaires de ${MONTHS[m - 1]}</p><div class="chips">${bd.map((c) =>
+    `<button type="button" data-id="${esc(c.id)}"><b>${Number(c.birthday.slice(8))}</b> ${esc(fullName(c))}${S.settings.birthday_gift && !giftThisYear(c) ? " · cadeau à offrir" : ""}</button>`).join("")}</div>` : "";
   renderSheet();
 }
 $("list").addEventListener("click", (e) => { const b = e.target.closest(".row"); if (b) openClient(b.dataset.id); });
+$("bdays").addEventListener("click", (e) => { const b = e.target.closest("[data-id]"); if (b) openClient(b.dataset.id); });
 $("search").addEventListener("input", (e) => { S.query = e.target.value; render(); });
 $("btn-new").onclick = () => openForm(null);
 $("btn-settings").onclick = () => { S.sheet = "settings"; renderSheet(); };
@@ -262,6 +331,7 @@ function clientSheet(c) {
     c.notes ? `Notes : ${c.notes}` : null].filter(Boolean).join("\n");
   return shell(fullName(c), fmtPhone(c.phone), `
     ${MF.cardHtml(c, goal(), S.settings.reward, S.pop)}
+    ${bdayMonth(c) === new Date().getMonth() + 1 ? `<div class="bday-banner"><p>C'est son mois d'anniversaire (le ${esc(fmtDate(c.birthday).replace(/\s\d{4}$/, ""))}).${giftThisYear(c) ? " Tampon cadeau déjà offert." : ""}</p>${S.settings.birthday_gift && !giftThisYear(c) ? `<button class="btn small" type="button" data-act="gift">Offrir le tampon anniversaire</button>` : ""}</div>` : ""}
     ${ready ? `<div class="reward-banner"><p>Carte complète : <strong>${esc(S.settings.reward)}</strong></p><button class="btn solid small" type="button" data-act="redeem">Récompense offerte</button></div>` : ""}
     <div class="actions">
       <button class="btn solid" type="button" data-act="stamp" ${ready ? "disabled" : ""}>${ready ? "Offrez d'abord la récompense" : "+ Ajouter un passage"}</button>
@@ -269,7 +339,7 @@ function clientSheet(c) {
       <button class="btn" type="button" data-act="show">Montrer la carte</button>
     </div>
     <div><p class="section-label">Fiche</p><p class="note">${esc(info)}</p></div>
-    <div><p class="section-label">Historique</p>${visits.length ? `<ul class="history">${visits.map((v) => `<li class="${v.t === "reward" ? "reward" : ""}"><span>${v.t === "reward" ? "Récompense offerte" : "Passage"}</span><span>${esc(fmtDate(v.d))} · ${esc(fmtTime(v.d))}</span></li>`).join("")}</ul>` : `<p class="note">Aucun passage enregistré.</p>`}</div>
+    <div><p class="section-label">Historique</p>${visits.length ? `<ul class="history">${visits.map((v) => `<li class="${v.t === "stamp" ? "" : "reward"}"><span>${v.t === "reward" ? "Récompense offerte" : v.t === "gift" ? "Tampon anniversaire" : "Passage"}</span><span>${esc(fmtDate(v.d))} · ${esc(fmtTime(v.d))}</span></li>`).join("")}</ul>` : `<p class="note">Aucun passage enregistré.</p>`}</div>
     ${S.confirming
       ? `<div class="confirm"><p>Supprimer la carte de ${esc(fullName(c))} ? Ses passages et son historique seront perdus.</p><div class="actions"><button class="btn danger" type="button" data-act="delete-yes">Supprimer définitivement</button><button class="btn ghost" type="button" data-act="delete-no">Garder</button></div></div>`
       : `<div class="actions"><button class="btn ghost small" type="button" data-act="edit">Modifier la fiche</button><button class="btn danger small" type="button" data-act="delete">Supprimer</button></div>`}`);
@@ -295,7 +365,16 @@ function settingsSheet() {
     <form id="settings-form" novalidate>
       <label>Nombre de passages pour une récompense<input class="field" id="set-stamps" type="number" min="3" max="20" value="${goal()}"></label>
       <label>Récompense offerte<input class="field" id="set-reward" maxlength="80" value="${esc(S.settings.reward)}"></label>
-      <p class="note">Le changement s'applique à toutes les cartes, y compris sur les téléphones des clientes.</p>
+      <label class="check"><input type="checkbox" id="set-gift" ${S.settings.birthday_gift ? "checked" : ""}> Offrir un tampon cadeau le mois de l'anniversaire (une fois par an)</label>
+      <p class="section-label" style="margin:8px 0 0">Infos affichées sur la carte des clientes</p>
+      <label>Lien de prise de rendez-vous (Planity, Calendly…)<input class="field" id="set-book" type="url" inputmode="url" placeholder="https://…" maxlength="300" value="${esc(S.settings.booking_url || "")}"></label>
+      <div class="two">
+        <label>Instagram<input class="field" id="set-ig" placeholder="@mafolieetmoi" maxlength="60" value="${esc(S.settings.instagram || "")}"></label>
+        <label>Téléphone du salon<input class="field" id="set-phone" type="tel" maxlength="30" value="${esc(S.settings.salon_phone || "")}"></label>
+      </div>
+      <label>Adresse<input class="field" id="set-addr" maxlength="200" value="${esc(S.settings.address || "")}"></label>
+      <label>Horaires<textarea class="field" id="set-hours" maxlength="300" placeholder="Mardi – vendredi : 9 h – 19 h&#10;Samedi : 9 h – 16 h">${esc(S.settings.hours || "")}</textarea></label>
+      <p class="note">Les champs laissés vides ne s'affichent pas. Les changements s'appliquent à toutes les cartes, y compris sur les téléphones des clientes.</p>
       <p class="err" id="f-err" hidden></p>
       <div class="actions"><button class="btn solid" type="submit">Enregistrer les réglages</button><button class="btn ghost" type="button" data-act="close">Fermer</button></div>
     </form>`);
@@ -308,9 +387,13 @@ async function onSubmit(e) {
     const stamps = parseInt($("set-stamps").value, 10), reward = $("set-reward").value.trim();
     if (!(stamps >= 3 && stamps <= 20)) return bad("Choisissez entre 3 et 20 passages.");
     if (!reward) return bad("Décrivez la récompense, par exemple « -50 % sur la pose ».");
-    const { error } = await db.from("settings").update({ stamps, reward }).eq("id", 1);
-    if (error) return bad("Enregistrement impossible. Réessayez.");
-    S.settings = { stamps, reward }; closeSheet(); render(); MF.toast("Réglages enregistrés"); return;
+    const booking_url = $("set-book").value.trim();
+    if (booking_url && !MF.safeUrl(booking_url)) return bad("Le lien de rendez-vous doit commencer par https://");
+    const upd = { stamps, reward, birthday_gift: $("set-gift").checked, booking_url,
+      instagram: $("set-ig").value.trim(), salon_phone: $("set-phone").value.trim(), address: $("set-addr").value.trim(), hours: $("set-hours").value.trim() };
+    const { error } = await db.from("settings").update(upd).eq("id", 1);
+    if (error) return bad("Enregistrement impossible. Vérifiez les champs et réessayez.");
+    S.settings = { ...S.settings, ...upd }; closeSheet(); render(); MF.toast("Réglages enregistrés"); return;
   }
   const c = S.formId ? S.clients.get(S.formId) : null;
   const body = { first_name: $("f-first").value.trim(), last_name: $("f-last").value.trim(), phone: $("f-phone").value.trim(), birthday: $("f-bday").value || null, notes: $("f-notes").value.trim() };
@@ -339,6 +422,12 @@ $("layer").addEventListener("click", async (e) => {
     if (error) return dbError(error);
     S.clients.delete(c.id); closeSheet(); render(); MF.toast(`Carte de ${name} supprimée`); return;
   }
+  if (act === "gift") {
+    b.disabled = true;
+    const { data, error } = await db.rpc("birthday_stamp", { p_id: c.id });
+    if (error) { b.disabled = false; return MF.toast(/gift_already/.test(error.message) ? "Le tampon anniversaire a déjà été offert cette année." : "Enregistrement impossible. Réessayez."); }
+    S.pop = Math.min(data.stamps, goal()) - 1; setRow(data); MF.toast("Tampon anniversaire offert"); return;
+  }
   if (act === "stamp" || act === "unstamp" || act === "redeem") {
     b.disabled = true;
     const fn = { stamp: "add_stamp", unstamp: "remove_stamp", redeem: "redeem" }[act];
@@ -352,7 +441,77 @@ $("layer").addEventListener("click", async (e) => {
 });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && S.sheet) { if (S.sheet === "show") { S.sheet = "client"; renderSheet(); } else closeSheet(); } });
 
-db.auth.onAuthStateChange((ev) => { if (ev === "SIGNED_IN" && $("v-app").hidden && $("v-wait").hidden) boot(); });
+db.auth.onAuthStateChange((ev) => {
+  if (ev === "PASSWORD_RECOVERY") { recovering = true; view("v-newpass"); status(""); return; }
+  if (ev === "SIGNED_IN" && $("v-app").hidden && $("v-wait").hidden && !recovering) boot();
+});
+
+/* ---------- Scanner ---------- */
+let scanStream = null, scanRaf = 0;
+function stopScan() {
+  cancelAnimationFrame(scanRaf);
+  if (scanStream) { scanStream.getTracks().forEach((t) => t.stop()); scanStream = null; }
+  const s = document.getElementById("scan-layer"); if (s) s.remove();
+}
+$("btn-scan").onclick = async () => {
+  const wrap = document.createElement("div");
+  wrap.id = "scan-layer"; wrap.className = "scan"; wrap.setAttribute("role", "dialog"); wrap.setAttribute("aria-modal", "true");
+  wrap.innerHTML = `<div class="frame"><video playsinline muted></video></div><p id="scan-msg">Visez le QR code affiché sur le téléphone de la cliente.</p><button class="btn ghost" type="button" id="scan-close">Fermer</button>`;
+  document.body.append(wrap);
+  $("scan-close").onclick = stopScan;
+  const video = wrap.querySelector("video");
+  try {
+    scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+  } catch {
+    $("scan-msg").textContent = "La caméra n'est pas accessible. Autorisez-la dans les réglages du navigateur, ou scannez le QR code avec l'appareil photo du téléphone.";
+    return;
+  }
+  video.srcObject = scanStream; await video.play().catch(() => {});
+  const canvas = document.createElement("canvas"), ctx = canvas.getContext("2d", { willReadFrequently: true });
+  const detector = "BarcodeDetector" in window ? new BarcodeDetector({ formats: ["qr_code"] }) : null;
+  let busy = false;
+  const tick = async () => {
+    if (!scanStream) return;
+    if (!busy && video.readyState >= 2) {
+      busy = true;
+      let text = null;
+      try {
+        if (detector) { const r = await detector.detect(video); if (r[0]) text = r[0].rawValue; }
+        else {
+          const w = video.videoWidth, h = video.videoHeight, s = Math.min(w, h, 640) / Math.min(w, h);
+          canvas.width = w * s; canvas.height = h * s; ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const code = jsQR(img.data, img.width, img.height, { inversionAttempts: "dontInvert" });
+          if (code) text = code.data;
+        }
+      } catch {}
+      busy = false;
+      if (text) {
+        const m = text.match(UUID_RE);
+        if (m) { if (navigator.vibrate) navigator.vibrate(60); stopScan(); stampByToken(m[1]); return; }
+        $("scan-msg").textContent = "Ce QR code n'est pas une carte Ma Folie et Moi.";
+      }
+    }
+    scanRaf = requestAnimationFrame(tick);
+  };
+  tick();
+};
+
+async function stampByToken(tok) {
+  let c = [...S.clients.values()].find((x) => x.token === tok);
+  if (!c) { await refresh(); c = [...S.clients.values()].find((x) => x.token === tok); }
+  if (!c) { MF.toast("Carte introuvable : elle a peut-être été supprimée."); return; }
+  const lastStamp = (c.visits || []).filter((v) => v.t === "stamp").map((v) => new Date(v.d)).pop();
+  if (lastStamp && Date.now() - lastStamp < 3 * 60000) { openClient(c.id); MF.toast(`Déjà tamponnée il y a moins de 3 minutes`); return; }
+  if (c.stamps >= goal()) { openClient(c.id); MF.toast("Carte complète : offrez d'abord la récompense"); return; }
+  const { data, error } = await db.rpc("add_stamp", { p_id: c.id });
+  if (error) { openClient(c.id); return dbError(error); }
+  S.pop = Math.min(data.stamps, goal()) - 1;
+  setRow(data); openClient(data.id);
+  MF.toast(data.stamps >= goal() ? `${fullName(data)} : carte complète !` : `Tampon ajouté pour ${fullName(data)} · ${data.stamps}/${goal()}`);
+}
+
+MF.registerSW();
 boot();
 })();
 </script>
