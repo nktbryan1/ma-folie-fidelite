@@ -2,7 +2,8 @@
 window.MF_CONFIG = {
   url: "https://rommwfibhucozktphmdv.supabase.co",
   key: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJvbW13ZmliaHVjb3prdHBobWR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTU2MTY3OTEsImV4cCI6MjExMTE5Mjc5MX0.PCHO04Eypz1bIffrfJkngDackYskT8lyxpZL2jQptkQ",
-  siteUrl: "https://nktbryan1.github.io/ma-folie-fidelite/"
+  // Adresse du site, déduite de la page ouverte (le QR code suit donc l'hébergement)
+  siteUrl: new URL(".", location.href).href
 };
 window.MF = {
   db: window.supabase.createClient(window.MF_CONFIG.url, window.MF_CONFIG.key),
