@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Ma carte · Ma Folie et Moi</title>
+<meta name="description" content="Votre carte de fidélité Ma Folie et Moi by Marie, prothésiste ongulaire.">
+<meta name="theme-color" content="#0d0a0c">
+<link rel="icon" href="logo.jpg">
+<link rel="apple-touch-icon" href="logo.jpg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Great+Vibes&family=Jost:wght@300;400;500;600&display=swap">
+<link rel="stylesheet" href="style.css">
+<style>
+.hello{font-family:var(--f-script);color:var(--gold);font-size:2.2rem;line-height:1.1;margin:0}
+.progress{margin:0;font-size:1.05rem}
+.progress b{color:var(--gold);font-weight:500}
+.linkbox{display:flex;gap:8px;flex-wrap:wrap}
+.linkbox input{flex:1 1 200px;min-width:0;font-size:.85rem}
+</style>
+</head>
+<body>
+<div class="wrap narrow">
+  <header class="brand">
+    <img src="logo.jpg" alt="Logo Ma Folie et Moi by Marie">
+    <div><h1>Ma Folie et Moi</h1><p>Ma carte de fidélité · by Marie</p></div>
+  </header>
+
+  <p class="notice" id="loading">Chargement de votre carte…</p>
+
+  <!-- Pas encore de carte -->
+  <section id="v-start" class="panel" hidden>
+    <div class="tabs" role="tablist">
+      <button type="button" role="tab" id="t-new" aria-selected="true">Créer ma carte</button>
+      <button type="button" role="tab" id="t-find" aria-selected="false">J'ai déjà une carte</button>
+    </div>
+
+    <form id="f-new" novalidate>
+      <p class="note" id="reward-line">À chaque passage, Marie ajoute un tampon. Carte pleine = une récompense.</p>
+      <div class="two">
+        <label>Prénom<input class="field" id="n-first" name="first" autocomplete="given-name" required maxlength="60"></label>
+        <label>Nom<input class="field" id="n-last" name="last" autocomplete="family-name" maxlength="60"></label>
+      </div>
+      <label>Téléphone<input class="field" id="n-phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="06 12 34 56 78" required></label>
+      <label>Anniversaire (facultatif, pour une petite surprise)<input class="field" id="n-bday" name="bday" type="date"></label>
+      <label class="check"><input type="checkbox" id="n-ok" name="ok"> J'accepte que Ma Folie et Moi conserve ces informations pour gérer ma carte de fidélité. Je peux demander leur suppression à Marie à tout moment.</label>
+      <p class="err" id="n-err" hidden></p>
+      <button class="btn solid" type="submit" id="n-submit">Créer ma carte</button>
+    </form>
+
+    <form id="f-find" novalidate hidden>
+      <p class="note">Retrouvez votre carte sur ce téléphone avec votre numéro et votre prénom.</p>
+      <label>Téléphone<input class="field" id="r-phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="06 12 34 56 78"></label>
+      <label>Prénom<input class="field" id="r-first" name="first" autocomplete="given-name"></label>
+      <p class="err" id="r-err" hidden></p>
+      <button class="btn solid" type="submit" id="r-submit">Afficher ma carte</button>
+    </form>
+  </section>
+
+  <!-- La carte -->
+  <section id="v-card" hidden style="display:flex;flex-direction:column;gap:20px">
+    <p class="hello" id="hello"></p>
+    <div id="card"></div>
+    <p class="progress" id="progress"></p>
+    <div class="reward-banner" id="reward" hidden><p></p></div>
+    <div class="panel">
+      <p class="section-label">Garder ma carte</p>
+      <p class="note">Ajoutez cette page à l'écran d'accueil de votre téléphone (menu Partager, puis « Sur l'écran d'accueil »). Votre lien personnel :</p>
+      <div class="linkbox">
+        <input class="field" id="mylink" readonly aria-label="Votre lien personnel">
+        <button class="btn small" type="button" id="copy">Copier</button>
+      </div>
+      <button class="btn ghost small" type="button" id="forget" style="align-self:flex-start">Ce n'est pas ma carte</button>
+    </div>
+  </section>
+
+  <p class="footer">Ma Folie et Moi by Marie · Prothésiste ongulaire depuis 2014</p>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+<script>
+(() => {
+const { db, esc } = MF;
+const $ = (id) => document.getElementById(id);
+const KEY = "mafolie-carte-token";
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+let token = null, lastStamps = null, pollTimer = null;
+
+const store = {
+  get() { try { return localStorage.getItem(KEY); } catch { return null; } },
+  set(v) { try { localStorage.setItem(KEY, v); } catch {} },
+  clear() { try { localStorage.removeItem(KEY); } catch {} }
+};
+const show = (id) => { for (const v of ["loading", "v-start", "v-card"]) $(v).hidden = v !== id; };
+const fail = (el, msg) => { el.textContent = msg; el.hidden = false; };
+
+async function loadSettings() {
+  const { data } = await db.from("settings").select("stamps,reward").eq("id", 1).maybeSingle();
+  if (data) $("reward-line").textContent = `À chaque passage, Marie ajoute un tampon. Au bout de ${data.stamps} passages : ${data.reward}.`;
+}
+
+async function loadCard(first = false) {
+  const { data, error } = await db.rpc("get_card", { p_token: token });
+  if (error) { if (first) { show("v-start"); fail($("r-err"), "Connexion impossible pour le moment. Réessayez dans un instant."); } return; }
+  if (!data) { store.clear(); token = null; show("v-start"); return; }
+  const g = data.goal, n = Math.min(data.stamps, g);
+  const pop = lastStamps != null && data.stamps > lastStamps ? n - 1 : -1;
+  lastStamps = data.stamps;
+  $("hello").textContent = `Bonjour ${data.first_name}`;
+  $("card").innerHTML = MF.cardHtml(data, g, data.reward, pop);
+  const left = Math.max(0, g - data.stamps);
+  $("progress").innerHTML = left
+    ? `Encore <b>${left}</b> passage${left > 1 ? "s" : ""} avant : ${esc(data.reward)}.`
+    : `<b>Votre carte est complète !</b>`;
+  const rb = $("reward");
+  rb.hidden = left > 0;
+  rb.querySelector("p").innerHTML = `Montrez cette carte à Marie lors de votre prochain rendez-vous : <strong>${esc(data.reward)}</strong>`;
+  const link = new URL(location.href); link.search = "?carte=" + token; link.hash = "";
+  $("mylink").value = link.toString();
+  show("v-card");
+}
+
+function openCard(t) {
+  token = t; store.set(t);
+  const u = new URL(location.href); u.search = "?carte=" + t; history.replaceState(null, "", u);
+  loadCard(true);
+  clearInterval(pollTimer);
+  pollTimer = setInterval(() => { if (!document.hidden) loadCard(); }, 30000);
+}
+
+function errorText(error) {
+  const m = (error && error.message) || "";
+  if (m.includes("phone_exists")) return "Ce numéro a déjà une carte. Utilisez « J'ai déjà une carte » pour la retrouver.";
+  if (m.includes("phone_invalid")) return "Ce numéro ne semble pas valide. Exemple : 06 12 34 56 78.";
+  if (m.includes("first_name_required")) return "Indiquez votre prénom.";
+  return "La carte n'a pas pu être créée. Vérifiez votre connexion et réessayez.";
+}
+
+// Onglets
+function tab(which) {
+  $("t-new").setAttribute("aria-selected", which === "new");
+  $("t-find").setAttribute("aria-selected", which === "find");
+  $("f-new").hidden = which !== "new";
+  $("f-find").hidden = which !== "find";
+}
+$("t-new").onclick = () => tab("new");
+$("t-find").onclick = () => tab("find");
+
+$("f-new").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const err = $("n-err"); err.hidden = true;
+  const first = $("n-first").value.trim(), phone = $("n-phone").value.trim();
+  if (!first) return fail(err, "Indiquez votre prénom.");
+  if (phone.replace(/\D/g, "").length < 6) return fail(err, "Indiquez votre numéro de téléphone.");
+  if (!$("n-ok").checked) return fail(err, "Cochez la case d'accord pour créer votre carte.");
+  const btn = $("n-submit"); btn.disabled = true; btn.textContent = "Création…";
+  const { data, error } = await db.rpc("register_card", { p_first: first, p_last: $("n-last").value.trim(), p_phone: phone, p_birthday: $("n-bday").value || null });
+  btn.disabled = false; btn.textContent = "Créer ma carte";
+  if (error || !data) return fail(err, errorText(error));
+  MF.toast("Votre carte est créée !");
+  openCard(data);
+});
+
+$("f-find").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const err = $("r-err"); err.hidden = true;
+  const phone = $("r-phone").value.trim(), first = $("r-first").value.trim();
+  if (!phone || !first) return fail(err, "Indiquez votre numéro et votre prénom.");
+  const btn = $("r-submit"); btn.disabled = true;
+  const { data, error } = await db.rpc("find_card", { p_phone: phone, p_first: first });
+  btn.disabled = false;
+  if (error) return fail(err, "Connexion impossible pour le moment. Réessayez dans un instant.");
+  if (!data) return fail(err, "Aucune carte avec ce numéro et ce prénom. Vérifiez l'orthographe, ou créez votre carte.");
+  openCard(data);
+});
+
+$("copy").onclick = async () => {
+  try { await navigator.clipboard.writeText($("mylink").value); MF.toast("Lien copié"); }
+  catch { $("mylink").select(); MF.toast("Lien sélectionné : copiez-le"); }
+};
+$("forget").onclick = () => {
+  store.clear(); token = null; lastStamps = null; clearInterval(pollTimer);
+  history.replaceState(null, "", location.pathname);
+  tab("find"); show("v-start");
+};
+document.addEventListener("visibilitychange", () => { if (!document.hidden && token) loadCard(); });
+
+// Démarrage
+loadSettings();
+const fromUrl = new URLSearchParams(location.search).get("carte");
+const t = (fromUrl && UUID.test(fromUrl)) ? fromUrl : store.get();
+if (t && UUID.test(t)) openCard(t); else show("v-start");
+})();
+</script>
+</body>
+</html>

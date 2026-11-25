@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Espace Marie · Ma Folie et Moi</title>
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#0d0a0c">
+<link rel="icon" href="logo.jpg">
+<link rel="apple-touch-icon" href="logo.jpg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Great+Vibes&family=Jost:wght@300;400;500;600&display=swap">
+<link rel="stylesheet" href="style.css">
+<style>
+.summary{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.summary div{background:var(--ink-2);padding:14px 16px}
+.summary b{display:block;font-size:1.7rem;font-weight:500;font-variant-numeric:tabular-nums}
+.summary span{font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.summary .hot b{color:var(--gold)}
+@media (max-width:480px){.summary b{font-size:1.35rem}.summary div{padding:12px}.summary span{font-size:.62rem}}
+.toolbar{display:flex;gap:10px;flex-wrap:wrap}
+.search{flex:1 1 220px;min-width:0;background:var(--ink-3);border:1px solid var(--line);border-radius:999px;padding:11px 18px}
+.search::placeholder{color:var(--muted)}
+.list{display:flex;flex-direction:column;border-top:1px solid var(--line)}
+.row{display:grid;grid-template-columns:1fr auto;gap:6px 16px;align-items:center;padding:14px 4px;border:0;border-bottom:1px solid var(--line);background:none;text-align:left;width:100%}
+.row:hover{background:var(--ink-2)}
+.row .name{font-size:1.05rem;font-weight:500;overflow-wrap:anywhere}
+.row .phone{font-size:.82rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.row .meta{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+.dots{display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end}
+.dots i{width:9px;height:9px;border-radius:50%;border:1px solid var(--gold-soft)}
+.dots i.on{background:var(--gold);border-color:var(--gold)}
+.chip{font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;padding:3px 9px;border-radius:999px;background:linear-gradient(90deg,var(--plum),var(--rose));color:#fff;white-space:nowrap}
+.chip.new{background:none;border:1px solid var(--gold-soft);color:var(--gold)}
+.count{font-size:.8rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.empty{padding:36px 8px;text-align:center;color:var(--muted)}
+.empty strong{display:block;font-family:var(--f-script);font-weight:400;font-size:2rem;color:var(--gold);margin-bottom:6px}
+.scrim{position:fixed;inset:0;background:#000000b3;z-index:20;display:flex;align-items:flex-end;justify-content:center;padding-top:env(safe-area-inset-top,0px)}
+@media (min-width:700px){.scrim{align-items:center;padding:24px}}
+.sheet{background:var(--ink-2);border:1px solid var(--line);border-radius:20px 20px 0 0;width:100%;max-width:560px;max-height:100%;overflow-y:auto;
+  padding:22px max(18px,env(safe-area-inset-right,0px)) calc(24px + env(safe-area-inset-bottom,0px)) max(18px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:20px}
+@media (min-width:700px){.sheet{border-radius:20px;max-height:92vh}}
+.sheet-head{display:flex;align-items:flex-start;gap:12px}
+.sheet-head h2{margin:0;font-weight:500;font-size:1.3rem;flex:1;min-width:0;overflow-wrap:anywhere}
+.sheet-head .sub{display:block;font-size:.85rem;color:var(--muted);font-weight:400}
+.x{background:none;border:0;color:var(--muted);font-size:1.6rem;line-height:1;padding:0 4px}
+.history{list-style:none;margin:0;padding:0}
+.history li{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--line);font-size:.9rem;font-variant-numeric:tabular-nums}
+.history li span:last-child{color:var(--muted)}
+.history li.reward span:first-child{color:var(--gold)}
+.confirm{border:1px solid #e5636f66;border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:10px}
+.confirm p{margin:0}
+.show{position:fixed;inset:0;z-index:30;background:var(--ink);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:24px;
+  padding:calc(24px + env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) calc(24px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+.show .card{width:min(560px,100%)}
+.show p{margin:0;color:var(--muted);text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="brand">
+    <img src="logo.jpg" alt="Logo Ma Folie et Moi by Marie">
+    <div><h1>Ma Folie et Moi</h1><p>Espace Marie · cartes de fidélité</p></div>
+    <div class="right actions" id="top-actions" hidden>
+      <a class="btn ghost small" href="affiche.html">Affiche QR</a>
+      <button class="btn ghost small" id="btn-settings" type="button">Réglages</button>
+      <button class="btn ghost small" id="btn-logout" type="button">Déconnexion</button>
+    </div>
+  </header>
+
+  <p class="notice" id="status">Chargement…</p>
+
+  <!-- Connexion -->
+  <section class="panel narrow" id="v-login" hidden style="width:100%;margin:0 auto">
+    <div class="tabs" role="tablist">
+      <button type="button" role="tab" id="t-in" aria-selected="true">Se connecter</button>
+      <button type="button" role="tab" id="t-up" aria-selected="false">Créer mon compte</button>
+    </div>
+    <form id="f-login" novalidate>
+      <label>E-mail<input class="field" id="l-email" type="email" autocomplete="username" required></label>
+      <label>Mot de passe<input class="field" id="l-pass" type="password" autocomplete="current-password" minlength="8" required></label>
+      <p class="note" id="l-hint" hidden>Choisissez un mot de passe d'au moins 8 caractères. Vous recevrez un e-mail de confirmation : cliquez sur le lien, puis revenez ici.</p>
+      <p class="err" id="l-err" hidden></p>
+      <button class="btn solid" type="submit" id="l-submit">Se connecter</button>
+    </form>
+  </section>
+
+  <!-- Compte en attente -->
+  <section class="panel narrow" id="v-wait" hidden style="width:100%;margin:0 auto">
+    <h2>Compte en attente d'activation</h2>
+    <p class="note" id="wait-text"></p>
+    <button class="btn ghost" type="button" id="wait-retry">Vérifier à nouveau</button>
+  </section>
+
+  <!-- Application -->
+  <div id="v-app" hidden style="display:flex;flex-direction:column;gap:28px">
+    <section class="summary" aria-label="Résumé">
+      <div><b id="s-clients">0</b><span>Clientes</span></div>
+      <div class="hot"><b id="s-rewards">0</b><span>Récompenses à offrir</span></div>
+      <div><b id="s-month">0</b><span>Passages ce mois</span></div>
+    </section>
+    <div class="toolbar">
+      <input class="search" id="search" type="search" placeholder="Rechercher une cliente (nom ou téléphone)" autocomplete="off">
+      <button class="btn solid" id="btn-new" type="button">+ Nouvelle cliente</button>
+    </div>
+    <div class="list" id="list" aria-live="polite"></div>
+  </div>
+</div>
+<div id="layer"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+<script>
+(() => {
+"use strict";
+const { db, esc, fmtPhone, fmtDate, fmtTime } = MF;
+const $ = (id) => document.getElementById(id);
+const S = { clients: new Map(), settings: { stamps: 10, reward: "" }, query: "", sheet: null, openId: null, formId: null, confirming: false, pop: -1, signup: false };
+const goal = () => S.settings.stamps || 10;
+const fullName = (c) => `${c.first_name || ""} ${c.last_name || ""}`.trim() || "Sans nom";
+const norm = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+const views = ["v-login", "v-wait", "v-app"];
+const view = (id) => { for (const v of views) $(v).hidden = v !== id; $("top-actions").hidden = id !== "v-app"; };
+const status = (m) => { $("status").textContent = m || ""; $("status").hidden = !m; };
+let refreshTimer = null;
+
+/* ---------- Connexion ---------- */
+function loginTab(up) {
+  S.signup = up;
+  $("t-in").setAttribute("aria-selected", !up); $("t-up").setAttribute("aria-selected", up);
+  $("l-hint").hidden = !up; $("l-submit").textContent = up ? "Créer mon compte" : "Se connecter";
+  $("l-pass").autocomplete = up ? "new-password" : "current-password";
+  $("l-err").hidden = true;
+}
+$("t-in").onclick = () => loginTab(false);
+$("t-up").onclick = () => loginTab(true);
+$("f-login").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const err = $("l-err"); err.hidden = true;
+  const email = $("l-email").value.trim(), password = $("l-pass").value;
+  if (!email || password.length < 8) { err.textContent = "Indiquez votre e-mail et un mot de passe d'au moins 8 caractères."; err.hidden = false; return; }
+  $("l-submit").disabled = true;
+  const res = S.signup
+    ? await db.auth.signUp({ email, password, options: { emailRedirectTo: MF_CONFIG.siteUrl + "marie.html" } })
+    : await db.auth.signInWithPassword({ email, password });
+  $("l-submit").disabled = false;
+  if (res.error) {
+    const m = res.error.message || "";
+    err.textContent = m.includes("Invalid login") ? "E-mail ou mot de passe incorrect."
+      : m.includes("not confirmed") ? "Confirmez d'abord votre e-mail avec le lien reçu, puis reconnectez-vous."
+      : m.includes("already registered") ? "Un compte existe déjà avec cet e-mail : connectez-vous."
+      : "Connexion impossible : " + m;
+    err.hidden = false; return;
+  }
+  if (S.signup && !res.data.session) { err.textContent = "Compte créé. Ouvrez l'e-mail de confirmation, cliquez sur le lien, puis connectez-vous ici."; err.hidden = false; loginTab(false); return; }
+  boot();
+});
+$("btn-logout").onclick = async () => { await db.auth.signOut(); clearInterval(refreshTimer); view("v-login"); status(""); };
+$("wait-retry").onclick = () => boot();
+
+async function boot() {
+  status("Chargement…");
+  const { data: { session } } = await db.auth.getSession();
+  if (!session) { status(""); view("v-login"); return; }
+  const { data: admin, error } = await db.rpc("is_admin");
+  if (error) { status("Connexion à la base impossible. Vérifiez internet et rechargez la page."); return; }
+  if (!admin) {
+    status("");
+    $("wait-text").textContent = `Vous êtes connectée avec ${session.user.email}. Ce compte doit être activé comme compte de Marie avant de voir les cartes.`;
+    view("v-wait"); return;
+  }
+  view("v-app");
+  await refresh();
+  status("");
+  clearInterval(refreshTimer);
+  refreshTimer = setInterval(() => { if (!document.hidden && !S.sheet) refresh(); }, 30000);
+}
+document.addEventListener("visibilitychange", () => { if (!document.hidden && !$("v-app").hidden && !S.sheet) refresh(); });
+
+/* ---------- Données ---------- */
+async function refresh() {
+  const [c, s] = await Promise.all([
+    db.from("clients").select("*").order("created_at", { ascending: false }),
+    db.from("settings").select("stamps,reward").eq("id", 1).maybeSingle()
+  ]);
+  if (c.error) { status("Les cartes n'ont pas pu être chargées. Rechargez la page."); return; }
+  S.clients = new Map(c.data.map((x) => [x.id, x]));
+  if (s.data) S.settings = s.data;
+  render();
+}
+function setRow(r) { if (r && r.id) S.clients.set(r.id, r); render(); }
+function dbError(error) { MF.toast(error && /forbidden/.test(error.message) ? "Action réservée au compte de Marie." : "Enregistrement impossible. Vérifiez internet et réessayez."); }
+
+/* ---------- Liste ---------- */
+function render() {
+  const now = new Date(); let rewards = 0, month = 0;
+  for (const c of S.clients.values()) {
+    if (c.stamps >= goal()) rewards++;
+    for (const v of c.visits || []) { if (v.t !== "stamp") continue; const d = new Date(v.d); if (d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()) month++; }
+  }
+  $("s-clients").textContent = S.clients.size; $("s-rewards").textContent = rewards; $("s-month").textContent = month;
+
+  const q = norm(S.query), qd = S.query.replace(/\D/g, "");
+  const items = [...S.clients.values()]
+    .filter((c) => !q || norm(fullName(c)).includes(q) || (qd && c.phone.includes(qd)))
+    .sort((a, b) => {
+      const ra = a.stamps >= goal(), rb = b.stamps >= goal();
+      if (ra !== rb) return ra ? -1 : 1;
+      return (b.last_visit || b.created_at).localeCompare(a.last_visit || a.created_at);
+    });
+  let html = "";
+  if (!S.clients.size) html = `<div class="empty"><strong>Aucune carte pour l'instant</strong>Les clientes qui scannent l'affiche QR apparaîtront ici. Vous pouvez aussi ajouter une carte avec « + Nouvelle cliente ».</div>`;
+  else if (!items.length) html = `<p class="empty">Aucune cliente ne correspond à « ${esc(S.query)} ».</p>`;
+  for (const c of items) {
+    const n = Math.min(c.stamps, goal()), ready = c.stamps >= goal();
+    const isNew = c.self_registered && !c.last_visit && (Date.now() - new Date(c.created_at)) < 14 * 864e5;
+    let dots = ""; for (let i = 0; i < goal(); i++) dots += `<i class="${i < n ? "on" : ""}"></i>`;
+    html += `<button class="row" type="button" data-id="${esc(c.id)}" aria-label="${esc(fullName(c))}, ${n} sur ${goal()}">
+      <span><span class="name">${esc(fullName(c))}</span><br><span class="phone">${esc(fmtPhone(c.phone))}</span></span>
+      <span class="meta">${ready ? `<span class="chip">Récompense prête</span>` : isNew ? `<span class="chip new">Nouvelle inscrite</span>` : `<span class="count">${n} / ${goal()}</span>`}<span class="dots" aria-hidden="true">${dots}</span></span></button>`;
+  }
+  $("list").innerHTML = html;
+  renderSheet();
+}
+$("list").addEventListener("click", (e) => { const b = e.target.closest(".row"); if (b) openClient(b.dataset.id); });
+$("search").addEventListener("input", (e) => { S.query = e.target.value; render(); });
+$("btn-new").onclick = () => openForm(null);
+$("btn-settings").onclick = () => { S.sheet = "settings"; renderSheet(); };
+
+/* ---------- Fiches ---------- */
+function closeSheet() { S.sheet = null; S.openId = null; S.formId = null; S.confirming = false; $("layer").innerHTML = ""; }
+function openClient(id) { S.openId = id; S.sheet = "client"; S.confirming = false; renderSheet(); }
+function openForm(id) { S.formId = id; S.sheet = "form"; renderSheet(); setTimeout(() => $("f-first") && $("f-first").focus(), 30); }
+const shell = (title, sub, body) => `<div class="scrim" id="scrim"><div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(title)}">
+  <div class="sheet-head"><h2>${esc(title)}${sub ? `<span class="sub">${esc(sub)}</span>` : ""}</h2><button class="x" type="button" data-act="close" aria-label="Fermer">×</button></div>${body}</div></div>`;
+
+function renderSheet() {
+  const layer = $("layer");
+  if (!S.sheet) { layer.innerHTML = ""; return; }
+  const c = S.openId ? S.clients.get(S.openId) : null;
+  if (S.sheet === "client" && c) layer.innerHTML = clientSheet(c);
+  else if (S.sheet === "show" && c) {
+    const left = Math.max(0, goal() - c.stamps);
+    layer.innerHTML = `<div class="show" role="dialog" aria-modal="true">${MF.cardHtml(c, goal(), S.settings.reward)}
+      <p>${left ? `Encore ${left} passage${left > 1 ? "s" : ""} avant : ${esc(S.settings.reward)}` : `Bravo ! ${esc(S.settings.reward)}`}</p>
+      <button class="btn ghost" type="button" data-act="back">Fermer</button></div>`;
+  } else if (S.sheet === "form") layer.innerHTML = formSheet();
+  else if (S.sheet === "settings") layer.innerHTML = settingsSheet();
+  else { closeSheet(); return; }
+  S.pop = -1;
+  const f = layer.querySelector("form"); if (f) f.addEventListener("submit", onSubmit);
+}
+
+function clientSheet(c) {
+  const ready = c.stamps >= goal();
+  const visits = (c.visits || []).slice().reverse().slice(0, 15);
+  const info = [
+    `Téléphone : ${fmtPhone(c.phone)}`,
+    c.birthday ? `Anniversaire : ${fmtDate(c.birthday)}` : null,
+    `Récompenses déjà offertes : ${c.rewards}`,
+    c.self_registered ? `Inscrite elle-même le ${fmtDate(c.created_at)}` : null,
+    c.notes ? `Notes : ${c.notes}` : null].filter(Boolean).join("\n");
+  return shell(fullName(c), fmtPhone(c.phone), `
+    ${MF.cardHtml(c, goal(), S.settings.reward, S.pop)}
+    ${ready ? `<div class="reward-banner"><p>Carte complète : <strong>${esc(S.settings.reward)}</strong></p><button class="btn solid small" type="button" data-act="redeem">Récompense offerte</button></div>` : ""}
+    <div class="actions">
+      <button class="btn solid" type="button" data-act="stamp" ${ready ? "disabled" : ""}>${ready ? "Offrez d'abord la récompense" : "+ Ajouter un passage"}</button>
+      <button class="btn ghost" type="button" data-act="unstamp" ${c.stamps ? "" : "disabled"}>Annuler un passage</button>
+      <button class="btn" type="button" data-act="show">Montrer la carte</button>
+    </div>
+    <div><p class="section-label">Fiche</p><p class="note">${esc(info)}</p></div>
+    <div><p class="section-label">Historique</p>${visits.length ? `<ul class="history">${visits.map((v) => `<li class="${v.t === "reward" ? "reward" : ""}"><span>${v.t === "reward" ? "Récompense offerte" : "Passage"}</span><span>${esc(fmtDate(v.d))} · ${esc(fmtTime(v.d))}</span></li>`).join("")}</ul>` : `<p class="note">Aucun passage enregistré.</p>`}</div>
+    ${S.confirming
+      ? `<div class="confirm"><p>Supprimer la carte de ${esc(fullName(c))} ? Ses passages et son historique seront perdus.</p><div class="actions"><button class="btn danger" type="button" data-act="delete-yes">Supprimer définitivement</button><button class="btn ghost" type="button" data-act="delete-no">Garder</button></div></div>`
+      : `<div class="actions"><button class="btn ghost small" type="button" data-act="edit">Modifier la fiche</button><button class="btn danger small" type="button" data-act="delete">Supprimer</button></div>`}`);
+}
+
+function formSheet() {
+  const c = S.formId ? S.clients.get(S.formId) : null;
+  return shell(c ? "Modifier la fiche" : "Nouvelle cliente", c ? fullName(c) : "Créer une carte de fidélité", `
+    <form id="client-form" novalidate>
+      <div class="two"><label>Prénom<input class="field" id="f-first" maxlength="60" value="${esc(c?.first_name || "")}"></label>
+      <label>Nom<input class="field" id="f-last" maxlength="60" value="${esc(c?.last_name || "")}"></label></div>
+      <div class="two"><label>Téléphone<input class="field" id="f-phone" type="tel" inputmode="tel" placeholder="06 12 34 56 78" value="${esc(c?.phone || "")}"></label>
+      <label>Anniversaire (facultatif)<input class="field" id="f-bday" type="date" value="${esc(c?.birthday || "")}"></label></div>
+      ${c ? "" : `<label>Passages déjà effectués<input class="field" id="f-stamps" type="number" min="0" max="${goal()}" value="0"></label>`}
+      <label>Notes (couleurs préférées, forme, allergies…)<textarea class="field" id="f-notes" maxlength="1000">${esc(c?.notes || "")}</textarea></label>
+      <p class="err" id="f-err" hidden></p>
+      <div class="actions"><button class="btn solid" type="submit">${c ? "Enregistrer" : "Créer la carte"}</button><button class="btn ghost" type="button" data-act="${c ? "back" : "close"}">Annuler</button></div>
+    </form>`);
+}
+
+function settingsSheet() {
+  return shell("Réglages de la carte", "Valables pour toutes les clientes", `
+    <form id="settings-form" novalidate>
+      <label>Nombre de passages pour une récompense<input class="field" id="set-stamps" type="number" min="3" max="20" value="${goal()}"></label>
+      <label>Récompense offerte<input class="field" id="set-reward" maxlength="80" value="${esc(S.settings.reward)}"></label>
+      <p class="note">Le changement s'applique à toutes les cartes, y compris sur les téléphones des clientes.</p>
+      <p class="err" id="f-err" hidden></p>
+      <div class="actions"><button class="btn solid" type="submit">Enregistrer les réglages</button><button class="btn ghost" type="button" data-act="close">Fermer</button></div>
+    </form>`);
+}
+
+async function onSubmit(e) {
+  e.preventDefault();
+  const err = $("f-err"); const bad = (m) => { err.textContent = m; err.hidden = false; };
+  if (e.target.id === "settings-form") {
+    const stamps = parseInt($("set-stamps").value, 10), reward = $("set-reward").value.trim();
+    if (!(stamps >= 3 && stamps <= 20)) return bad("Choisissez entre 3 et 20 passages.");
+    if (!reward) return bad("Décrivez la récompense, par exemple « -50 % sur la pose ».");
+    const { error } = await db.from("settings").update({ stamps, reward }).eq("id", 1);
+    if (error) return bad("Enregistrement impossible. Réessayez.");
+    S.settings = { stamps, reward }; closeSheet(); render(); MF.toast("Réglages enregistrés"); return;
+  }
+  const c = S.formId ? S.clients.get(S.formId) : null;
+  const body = { first_name: $("f-first").value.trim(), last_name: $("f-last").value.trim(), phone: $("f-phone").value.trim(), birthday: $("f-bday").value || null, notes: $("f-notes").value.trim() };
+  if (!body.first_name && !body.last_name) return bad("Indiquez au moins un prénom ou un nom.");
+  if (body.phone.replace(/\D/g, "").length < 6) return bad("Indiquez un numéro de téléphone (au moins 6 chiffres).");
+  if (!c) body.stamps = Math.max(0, Math.min(goal(), parseInt($("f-stamps").value, 10) || 0));
+  const q = c ? db.from("clients").update(body).eq("id", c.id).select().single() : db.from("clients").insert(body).select().single();
+  const { data, error } = await q;
+  if (error) return bad(/clients_phone_key|duplicate/.test(error.message) ? "Ce numéro est déjà enregistré pour une autre cliente." : "Enregistrement impossible : vérifiez les champs et réessayez.");
+  setRow(data); openClient(data.id); MF.toast(c ? "Fiche enregistrée" : `Carte de ${data.first_name || data.last_name} créée`);
+}
+
+$("layer").addEventListener("click", async (e) => {
+  if (e.target.id === "scrim") return closeSheet();
+  const b = e.target.closest("[data-act]"); if (!b) return;
+  const act = b.dataset.act, c = S.clients.get(S.openId);
+  if (act === "close") return closeSheet();
+  if (act === "back") { S.sheet = "client"; return renderSheet(); }
+  if (act === "show") { S.sheet = "show"; return renderSheet(); }
+  if (act === "edit") return openForm(c.id);
+  if (act === "delete") { S.confirming = true; return renderSheet(); }
+  if (act === "delete-no") { S.confirming = false; return renderSheet(); }
+  if (act === "delete-yes") {
+    const name = fullName(c);
+    const { error } = await db.from("clients").delete().eq("id", c.id);
+    if (error) return dbError(error);
+    S.clients.delete(c.id); closeSheet(); render(); MF.toast(`Carte de ${name} supprimée`); return;
+  }
+  if (act === "stamp" || act === "unstamp" || act === "redeem") {
+    b.disabled = true;
+    const fn = { stamp: "add_stamp", unstamp: "remove_stamp", redeem: "redeem" }[act];
+    const { data, error } = await db.rpc(fn, { p_id: c.id });
+    if (error) { b.disabled = false; return dbError(error); }
+    if (act === "stamp") S.pop = Math.min(data.stamps, goal()) - 1;
+    setRow(data);
+    MF.toast(act === "stamp" ? (data.stamps >= goal() ? `Carte complète ! ${S.settings.reward}` : `Passage ajouté · ${data.stamps}/${goal()}`)
+      : act === "unstamp" ? "Dernier passage annulé" : "Récompense offerte, nouvelle carte commencée");
+  }
+});
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && S.sheet) { if (S.sheet === "show") { S.sheet = "client"; renderSheet(); } else closeSheet(); } });
+
+db.auth.onAuthStateChange((ev) => { if (ev === "SIGNED_IN" && $("v-app").hidden && $("v-wait").hidden) boot(); });
+boot();
+})();
+</script>
+</body>
+</html>

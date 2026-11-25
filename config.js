@@ -1,0 +1,37 @@
+// Connexion à la base Supabase (clé publique : elle peut être dans le code, la sécurité est assurée par la base).
+window.MF_CONFIG = {
+  url: "https://rommwfibhucozktphmdv.supabase.co",
+  key: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJvbW13ZmliaHVjb3prdHBobWR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTU2MTY3OTEsImV4cCI6MjExMTE5Mjc5MX0.PCHO04Eypz1bIffrfJkngDackYskT8lyxpZL2jQptkQ",
+  siteUrl: "https://nktbryan1.github.io/ma-folie-fidelite/"
+};
+window.MF = {
+  db: window.supabase.createClient(window.MF_CONFIG.url, window.MF_CONFIG.key),
+  esc: (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])),
+  fmtPhone: (p) => { const d = String(p || "").replace(/\D/g, ""); return d.length === 10 ? d.replace(/(\d{2})(?=\d)/g, "$1 ") : (p || ""); },
+  fmtDate: (iso) => { try { return new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "short", year: "numeric" }).format(new Date(iso)); } catch { return ""; } },
+  fmtTime: (iso) => { try { return new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit" }).format(new Date(iso)); } catch { return ""; } },
+  nailSvg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M8 21V9.5a4 4 0 0 1 8 0V21"/><path d="M8.6 9.2c1-2.2 5.8-2.2 6.8 0"/><path d="M19 4.5v3M17.5 6h3M5 3.5v2M4 4.5h2"/></svg>',
+  // Dessine la carte (valeurs échappées)
+  cardHtml(c, goal, reward, pop = -1) {
+    const n = Math.min(c.stamps || 0, goal);
+    let stamps = "";
+    for (let i = 0; i < goal; i++) {
+      const on = i < n, last = i === goal - 1;
+      stamps += `<div class="stamp${on ? " on" : ""}${last && !on ? " gift" : ""}${i === pop ? " pop" : ""}" aria-hidden="true">${on ? MF.nailSvg : last ? "♥" : i + 1}</div>`;
+    }
+    const cols = goal > 10 ? Math.ceil(goal / 2) : 5;
+    const name = `${c.first_name || ""} ${c.last_name || ""}`.trim();
+    const since = c.created_at ? `Cliente depuis ${new Date(c.created_at).getFullYear()}` : "";
+    return `<div class="card" role="img" aria-label="Carte de ${MF.esc(name)} : ${n} passages sur ${goal}">
+      <div class="card-top"><div class="card-title">Ma Folie et Moi<small>Prothésiste ongulaire depuis 2014</small></div>
+      <div class="card-owner"><b>${MF.esc(name)}</b>${MF.esc(since)}</div></div>
+      <div class="stamps" style="grid-template-columns:repeat(${cols},1fr)">${stamps}</div>
+      <div class="card-foot"><span><b>${n}/${goal}</b> passages</span><span>${goal}ᵉ passage : ${MF.esc(reward)}</span></div></div>`;
+  },
+  toast(msg) {
+    let t = document.getElementById("toast");
+    if (!t) { t = document.createElement("div"); t.id = "toast"; t.className = "toast"; t.setAttribute("role", "status"); document.body.append(t); }
+    t.textContent = msg; t.hidden = false;
+    clearTimeout(MF._tt); MF._tt = setTimeout(() => (t.hidden = true), 2600);
+  }
+};
