@@ -1,6 +1,6 @@
 ﻿// Service worker minimal : rend le site installable et garde les fichiers du site pour un affichage rapide.
 // Les données (Supabase) passent toujours par le réseau.
-const CACHE = "mafolie-v8";
+const CACHE = "mafolie-v9";
 
 // Notifications push
 self.addEventListener("push", (e) => {

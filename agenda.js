@@ -368,7 +368,14 @@ window.Agenda = {
     if (last === "agenda" || last === "requests") MarieApp.nav(last);
   },
   show(which) { if (!A.loaded) return load().then(render); render(); },
-  newFor(clientId) { MarieApp.nav("agenda"); openAppt({ start: nextSlot(), clientId }); }
+  newFor(clientId) { MarieApp.nav("agenda"); openAppt({ start: nextSlot(), clientId }); },
+  // Ouvre l'agenda sur la semaine d'un rendez-vous et affiche sa fiche
+  async openAt(id, startIso) {
+    A.week = mondayOf(new Date(startIso));
+    MarieApp.nav("agenda");
+    await load(); render();
+    if (A.appts.some((x) => x.id === id)) openAppt({ id });
+  }
 };
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && A.sheet) closeAppt(); });
 if (window.MarieApp && MarieApp.ready) window.Agenda.start();

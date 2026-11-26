@@ -72,6 +72,11 @@
 .scan video{width:100%;height:100%;object-fit:cover;display:block}
 .scan p{margin:0;color:var(--text);text-align:center}
 .nav3{grid-template-columns:repeat(3,1fr)}
+.rdv-list{list-style:none;margin:0 0 8px;padding:0;display:flex;flex-direction:column;gap:6px}
+.rdv-item{width:100%;display:flex;justify-content:space-between;align-items:center;gap:12px;text-align:left;background:var(--ink-3);border:1px solid var(--line);border-left:3px solid var(--gold);border-radius:10px;padding:10px 12px;color:var(--text)}
+.rdv-item:hover{border-color:var(--gold-soft)}
+.rdv-item b{font-weight:500}
+.rdv-item>span:last-child{color:var(--gold);font-size:1.3rem}
 .badge{display:inline-grid;place-items:center;min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:var(--rose);color:#fff;font-size:.75rem;font-variant-numeric:tabular-nums;margin-left:4px}
 </style>
 </head>
@@ -283,7 +288,33 @@ $("btn-settings").onclick = () => { S.sheet = "settings"; renderSheet(); };
 
 /* ---------- Fiches ---------- */
 function closeSheet() { S.sheet = null; S.openId = null; S.formId = null; S.confirming = false; $("layer").innerHTML = ""; }
-function openClient(id) { S.openId = id; S.sheet = "client"; S.confirming = false; renderSheet(); }
+function openClient(id) { S.openId = id; S.sheet = "client"; S.confirming = false; S.rdv = null; renderSheet(); loadClientRdv(id); }
+
+// Rendez-vous de la cliente (à venir + dernier passé) et demande en cours
+async function loadClientRdv(id) {
+  const nowIso = new Date().toISOString();
+  const [up, past, req] = await Promise.all([
+    db.from("appointments").select("id,starts_at,ends_at,notes").eq("client_id", id).eq("status", "confirmed").eq("kind", "rdv").gt("ends_at", nowIso).order("starts_at").limit(10),
+    db.from("appointments").select("id,starts_at,ends_at").eq("client_id", id).eq("status", "confirmed").eq("kind", "rdv").lte("ends_at", nowIso).order("starts_at", { ascending: false }).limit(1),
+    db.from("appointment_requests").select("id,status,preferences,proposals").eq("client_id", id).in("status", ["pending", "proposed"]).limit(1)
+  ]);
+  if (S.openId !== id) return; // fiche fermée ou changée entre-temps
+  S.rdv = { error: !!(up.error || past.error || req.error), upcoming: up.data || [], last: (past.data || [])[0] || null, request: (req.data || [])[0] || null };
+  if (S.sheet === "client") renderSheet();
+}
+function rdvSummary() {
+  if (!S.rdv) return `<div><p class="section-label">Rendez-vous</p><p class="note">Chargement…</p></div>`;
+  if (S.rdv.error) return `<div><p class="section-label">Rendez-vous</p><p class="note">Les rendez-vous n'ont pas pu être chargés.</p></div>`;
+  const day = (iso) => { const s = new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long" }).format(new Date(iso)); return s.charAt(0).toUpperCase() + s.slice(1); };
+  const items = S.rdv.upcoming.map((a) => `<li><button type="button" class="rdv-item" data-act="open-rdv" data-rdv="${esc(a.id)}" data-start="${esc(a.starts_at)}">
+      <span><b>${esc(day(a.starts_at))}</b><br><span class="note">${esc(fmtTime(a.starts_at))} – ${esc(fmtTime(a.ends_at))}${a.notes ? " · " + esc(a.notes) : ""}</span></span><span aria-hidden="true">›</span></button></li>`).join("");
+  const r = S.rdv.request;
+  const reqLine = r ? `<p class="note">${r.status === "pending" ? "Demande de rendez-vous à traiter" : "Créneaux proposés, en attente de sa réponse"} · ${esc(r.preferences || "")} <button type="button" class="linkbtn" data-act="open-req">Voir</button></p>` : "";
+  return `<div><p class="section-label">Rendez-vous${S.rdv.upcoming.length ? ` à venir (${S.rdv.upcoming.length})` : ""}</p>
+    ${items ? `<ul class="rdv-list">${items}</ul>` : `<p class="note">Aucun rendez-vous prévu.</p>`}
+    ${reqLine}
+    ${S.rdv.last ? `<p class="note">Dernier rendez-vous : ${esc(fmtDate(S.rdv.last.starts_at))}</p>` : ""}</div>`;
+}
 function openForm(id) { S.formId = id; S.sheet = "form"; renderSheet(); setTimeout(() => $("f-first") && $("f-first").focus(), 30); }
 const shell = (title, sub, body) => `<div class="scrim" id="scrim"><div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(title)}">
   <div class="sheet-head"><h2>${esc(title)}${sub ? `<span class="sub">${esc(sub)}</span>` : ""}</h2><button class="x" type="button" data-act="close" aria-label="Fermer">×</button></div>${body}</div></div>`;
@@ -324,6 +355,7 @@ function clientSheet(c) {
       <button class="btn" type="button" data-act="show">Montrer la carte</button>
       <button class="btn ghost" type="button" data-act="book">Prendre un rendez-vous</button>
     </div>
+    ${rdvSummary()}
     <div><p class="section-label">Fiche</p><p class="note">${esc(info)}</p></div>
     <div><p class="section-label">Historique</p>${visits.length ? `<ul class="history">${visits.map((v) => `<li class="${v.t === "stamp" ? "" : "reward"}"><span>${v.t === "reward" ? "Récompense offerte" : v.t === "gift" ? "Tampon anniversaire" : "Passage"}</span><span>${esc(fmtDate(v.d))} · ${esc(fmtTime(v.d))}</span></li>`).join("")}</ul>` : `<p class="note">Aucun passage enregistré.</p>`}</div>
     ${S.confirming
@@ -397,6 +429,8 @@ $("layer").addEventListener("click", async (e) => {
   if (act === "back") { S.sheet = "client"; return renderSheet(); }
   if (act === "show") { S.sheet = "show"; return renderSheet(); }
   if (act === "book") { const id = c.id; closeSheet(); if (window.Agenda) window.Agenda.newFor(id); return; }
+  if (act === "open-rdv") { const id = b.dataset.rdv, start = b.dataset.start; closeSheet(); if (window.Agenda) window.Agenda.openAt(id, start); return; }
+  if (act === "open-req") { closeSheet(); nav("requests"); return; }
   if (act === "edit") return openForm(c.id);
   if (act === "delete") { S.confirming = true; return renderSheet(); }
   if (act === "delete-no") { S.confirming = false; return renderSheet(); }
