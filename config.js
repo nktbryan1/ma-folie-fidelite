@@ -46,22 +46,48 @@ window.MF = {
     if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) return "unsupported";
     return Notification.permission;                        // "default" | "granted" | "denied"
   },
+  // Service worker prêt (enregistré au besoin), avec délai maximum
+  async swReady(ms = 12000) {
+    let reg = await navigator.serviceWorker.getRegistration();
+    if (!reg) reg = await navigator.serviceWorker.register("sw.js");
+    if (reg.active) return reg;
+    return Promise.race([
+      navigator.serviceWorker.ready,
+      new Promise((_, rej) => setTimeout(() => rej(new Error("service worker pas actif après " + ms / 1000 + " s")), ms))
+    ]);
+  },
   async pushSubscription() {
     if (MF.pushState() !== "granted") return null;
-    const reg = await navigator.serviceWorker.ready;
-    return reg.pushManager.getSubscription();
+    const reg = await MF.swReady(5000).catch(() => null);
+    return reg ? reg.pushManager.getSubscription() : null;
   },
+  // Chaque étape est nommée : en cas d'échec, l'erreur est enregistrée pour le diagnostic
   async pushSubscribe() {
-    const perm = await Notification.requestPermission();
-    if (perm !== "granted") throw new Error("denied");
-    const reg = await navigator.serviceWorker.ready;
-    const { data: key, error } = await MF.db.rpc("push_public_key");
-    if (error || !key) throw new Error("no_key");
-    const raw = Uint8Array.from(atob(key.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((key.length + 3) % 4)), (c) => c.charCodeAt(0));
-    let sub = await reg.pushManager.getSubscription();
-    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: raw });
-    const j = sub.toJSON();
-    return { endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth };
+    let step = "permission";
+    try {
+      const perm = await new Promise((res) => { const p = Notification.requestPermission(res); if (p && p.then) p.then(res); });
+      if (perm !== "granted") { const e = new Error(perm === "denied" ? "denied" : "dismissed"); e.step = step; throw e; }
+      step = "service-worker"; const reg = await MF.swReady();
+      step = "cle"; const { data: key, error } = await MF.db.rpc("push_public_key");
+      if (error || !key) throw new Error(error ? error.message : "clé absente");
+      const raw = Uint8Array.from(atob(key.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((key.length + 3) % 4)), (c) => c.charCodeAt(0));
+      step = "abonnement";
+      let sub = await reg.pushManager.getSubscription();
+      if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: raw });
+      const j = sub.toJSON();
+      return { endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth };
+    } catch (e) {
+      e.step = e.step || step;
+      MF.db.rpc("log_push_error", { p_step: e.step, p_message: String((e && (e.name + ": " + e.message)) || e), p_ua: navigator.userAgent }).then(() => {}, () => {});
+      throw e;
+    }
+  },
+  pushErrorText(e) {
+    if (e && e.message === "denied") return "Notifications refusées. Autorisez-les dans les paramètres du navigateur (Sites → Notifications), puis réessayez.";
+    if (e && e.message === "dismissed") return "La demande d'autorisation a été fermée. Touchez à nouveau le bouton et choisissez « Autoriser ».";
+    if (e && e.step === "service-worker") return "Le navigateur n'a pas fini de préparer l'application. Rechargez la page et réessayez.";
+    if (e && e.step === "abonnement") return "Le navigateur refuse l'abonnement (" + (e.name || "erreur") + "). Essayez avec Chrome, ou vérifiez que les notifications sont autorisées pour ce navigateur dans les réglages du téléphone.";
+    return "Activation impossible (" + ((e && e.step) || "?") + "). Réessayez dans un instant.";
   },
   async pushUnsubscribe() {
     const sub = await MF.pushSubscription();

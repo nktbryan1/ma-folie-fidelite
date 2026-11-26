@@ -421,10 +421,13 @@ $("notif-on").onclick = async () => {
   try {
     const s = await MF.pushSubscribe();
     const { error } = await db.rpc("save_client_push", { p_token: token, p_endpoint: s.endpoint, p_p256dh: s.p256dh, p_auth: s.auth });
-    if (error) throw error;
+    if (error) { db.rpc("log_push_error", { p_step: "enregistrement", p_message: error.message, p_ua: navigator.userAgent }); const e = new Error(error.message); e.step = "enregistrement"; throw e; }
     MF.toast("Notifications activées");
   } catch (e) {
-    MF.toast(e && e.message === "denied" ? "Vous avez refusé les notifications." : "Activation impossible pour le moment.");
+    $("notif-text").textContent = MF.pushErrorText(e);
+    MF.toast("Activation impossible");
+    $("notif-on").disabled = false;
+    return;
   }
   $("notif-on").disabled = false;
   renderNotif();

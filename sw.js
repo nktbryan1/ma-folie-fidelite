@@ -1,6 +1,6 @@
 ﻿// Service worker minimal : rend le site installable et garde les fichiers du site pour un affichage rapide.
 // Les données (Supabase) passent toujours par le réseau.
-const CACHE = "mafolie-v6";
+const CACHE = "mafolie-v7";
 
 // Notifications push
 self.addEventListener("push", (e) => {
@@ -22,7 +22,11 @@ self.addEventListener("notificationclick", (e) => {
   }));
 });
 const FILES = ["./", "index.html", "marie.html", "agenda.js", "style.css", "config.js", "logo.jpg", "icon-192.png"];
-self.addEventListener("install", (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)).then(() => self.skipWaiting())); });
+// L'installation ne doit jamais échouer à cause du cache (sinon les notifications ne peuvent pas s'activer)
+self.addEventListener("install", (e) => {
+  self.skipWaiting();
+  e.waitUntil(caches.open(CACHE).then((c) => Promise.allSettled(FILES.map((f) => c.add(f)))).catch(() => {}));
+});
 self.addEventListener("activate", (e) => {
   e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim()));
 });

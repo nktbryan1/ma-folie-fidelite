@@ -516,21 +516,24 @@ async function renderNotifBtn() {
   b.dataset.on = sub ? "1" : "";
   if (sub) { const j = sub.toJSON(); db.rpc("save_marie_push", { p_endpoint: j.endpoint, p_p256dh: j.keys.p256dh, p_auth: j.keys.auth }); }
 }
+// Message durable (un toast disparaît trop vite pour une explication)
+function showNotifError(msg) { const s = $("status"); s.textContent = msg; s.hidden = false; MF.toast("Activation impossible"); }
 $("btn-notif").onclick = async () => {
   const st = MF.pushState(), b = $("btn-notif");
-  if (st === "ios-install") return MF.toast("Sur iPhone : ajoutez d'abord l'Espace Marie à l'écran d'accueil, puis ouvrez-le depuis l'icône.");
-  if (st === "unsupported") return MF.toast("Ce navigateur ne permet pas les notifications.");
-  if (st === "denied") return MF.toast("Notifications bloquées : autorisez-les dans les réglages du navigateur.");
+  $("status").hidden = true;
+  if (st === "ios-install") return showNotifError("Sur iPhone : ajoutez d'abord l'Espace Marie à l'écran d'accueil (bouton Partager, puis « Sur l'écran d'accueil »), puis ouvrez-le depuis l'icône.");
+  if (st === "unsupported") return showNotifError("Ce navigateur ne permet pas les notifications. Ouvrez l'Espace Marie avec Chrome.");
+  if (st === "denied") return showNotifError(MF.pushErrorText(new Error("denied")));
   b.disabled = true;
   try {
     if (b.dataset.on) { await MF.pushUnsubscribe(); MF.toast("Notifications désactivées sur ce téléphone"); }
     else {
       const s = await MF.pushSubscribe();
       const { error } = await db.rpc("save_marie_push", { p_endpoint: s.endpoint, p_p256dh: s.p256dh, p_auth: s.auth });
-      if (error) throw error;
+      if (error) { db.rpc("log_push_error", { p_step: "enregistrement", p_message: error.message, p_ua: navigator.userAgent }); const e = new Error(error.message); e.step = "enregistrement"; throw e; }
       MF.toast("Notifications activées : nouvelles demandes et rendez-vous confirmés");
     }
-  } catch (e) { MF.toast(e && e.message === "denied" ? "Vous avez refusé les notifications." : "Activation impossible pour le moment."); }
+  } catch (e) { showNotifError(MF.pushErrorText(e)); }
   b.disabled = false;
   renderNotifBtn();
 };
