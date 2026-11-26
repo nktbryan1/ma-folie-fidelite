@@ -417,7 +417,8 @@ async function renderNotif() {
   }
 }
 $("notif-on").onclick = async () => {
-  $("notif-on").disabled = true;
+  $("notif-on").disabled = true; $("notif-on").textContent = "Activation…";
+  $("notif-text").textContent = "Si le téléphone vous le demande, choisissez « Autoriser ».";
   try {
     const s = await MF.pushSubscribe();
     const { error } = await db.rpc("save_client_push", { p_token: token, p_endpoint: s.endpoint, p_p256dh: s.p256dh, p_auth: s.auth });
@@ -426,10 +427,10 @@ $("notif-on").onclick = async () => {
   } catch (e) {
     $("notif-text").textContent = MF.pushErrorText(e);
     MF.toast("Activation impossible");
-    $("notif-on").disabled = false;
+    $("notif-on").disabled = false; $("notif-on").textContent = "Réessayer";
     return;
   }
-  $("notif-on").disabled = false;
+  $("notif-on").disabled = false; $("notif-on").textContent = "Activer les notifications";
   renderNotif();
 };
 $("notif-off").onclick = async () => { await MF.pushUnsubscribe().catch(() => {}); MF.toast("Notifications désactivées"); renderNotif(); };

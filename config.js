@@ -65,8 +65,15 @@ window.MF = {
   async pushSubscribe() {
     let step = "permission";
     try {
-      const perm = await new Promise((res) => { const p = Notification.requestPermission(res); if (p && p.then) p.then(res); });
-      if (perm !== "granted") { const e = new Error(perm === "denied" ? "denied" : "dismissed"); e.step = step; throw e; }
+      MF.db.rpc("log_push_error", { p_step: "clic", p_message: "permission=" + Notification.permission, p_ua: navigator.userAgent }).then(() => {}, () => {});
+      let perm = Notification.permission;
+      if (perm !== "granted") {
+        perm = await Promise.race([
+          new Promise((res) => { try { const p = Notification.requestPermission(res); if (p && p.then) p.then(res, () => res("denied")); } catch { res("denied"); } }),
+          new Promise((res) => setTimeout(() => res("timeout"), 20000))
+        ]);
+      }
+      if (perm !== "granted") { const e = new Error(perm === "denied" ? "denied" : perm === "timeout" ? "timeout" : "dismissed"); e.step = step; throw e; }
       step = "service-worker"; const reg = await MF.swReady();
       step = "cle"; const { data: key, error } = await MF.db.rpc("push_public_key");
       if (error || !key) throw new Error(error ? error.message : "clé absente");
@@ -84,6 +91,7 @@ window.MF = {
   },
   pushErrorText(e) {
     if (e && e.message === "denied") return "Notifications refusées. Autorisez-les dans les paramètres du navigateur (Sites → Notifications), puis réessayez.";
+    if (e && e.message === "timeout") return "Le téléphone n'a pas affiché la demande d'autorisation. Dans Samsung Internet : menu ≡ → Paramètres → Sites et téléchargements → Notifications, autorisez ce site (et activez « Demander avant d'autoriser »). Ou ouvrez la page avec Chrome.";
     if (e && e.message === "dismissed") return "La demande d'autorisation a été fermée. Touchez à nouveau le bouton et choisissez « Autoriser ».";
     if (e && e.step === "service-worker") return "Le navigateur n'a pas fini de préparer l'application. Rechargez la page et réessayez.";
     if (e && e.step === "abonnement") return "Le navigateur refuse l'abonnement (" + (e.name || "erreur") + "). Essayez avec Chrome, ou vérifiez que les notifications sont autorisées pour ce navigateur dans les réglages du téléphone.";
